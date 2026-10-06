@@ -1,0 +1,784 @@
+// ---------------------------------------------------------------------------
+// Komu - Prisma schema
+//
+// Structure mirrors the product areas:
+//   users/auth      -> User, DiscordAccount
+//   community       -> Guild, GuildMember
+//   integrations    -> StreamingAccount, Stream
+//   alerts          -> AlertConfiguration
+//   progression     -> XPTransaction, MemberXP, RoleRule
+//   gamification    -> Reward, RewardGrant, Challenge, ChallengeRequirement,
+//                      ChallengeProgress, Achievement, MemberAchievement
+//   moderation      -> ModerationRule, ModerationAction
+//
+// V1 supports a single Discord server, but community-owned rows carry a
+// `guildId` so the schema can support multiple servers later without a
+// rewrite. See PRD section 10.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+//
+// Condition and action types are predefined here rather than built with a
+// generic rules engine. Rewards, challenges, achievements and role rules all
+// reuse these small, closed sets. See IMPLEMENTATION_PLAN section 22.
+// ---------------------------------------------------------------------------
+
+/// Streaming platforms Komu can read live status from.
+enum StreamingProvider {
+  TWITCH
+  YOUTUBE
+  KICK
+}
+
+/// Where a stream alert is posted. Stored as the Discord snowflake.
+enum AlertChannelType {
+  /// Post in a specific channel.
+  CHANNEL
+}
+
+/// How an alert is rendered.
+enum AlertMessageMode {
+  /// Use the custom message set by the creator.
+  CUSTOM
+  /// Use a built-in template with the stream details.
+  DEFAULT
+}
+
+/// Where a member's XP came from. Kept on every transaction so history is
+/// queryable (PRD section 7.5).
+enum XPSource {
+  MESSAGE
+  STREAM_ATTENDANCE
+  WATCH_TIME
+  CHALLENGE
+  ACHIEVEMENT
+  REWARD
+  MANUAL
+}
+
+/// Which activity counter a role rule or reward watches.
+enum ProgressionMetric {
+  /// Total XP accumulated.
+  XP
+  /// Current level.
+  LEVEL
+  /// Count of qualifying Discord messages.
+  MESSAGE_COUNT
+  /// Count of streams attended.
+  STREAM_ATTENDANCE
+  /// Accumulated watch time, in hours.
+  WATCH_TIME_HOURS
+  /// Days since the member joined the Discord server.
+  MEMBER_AGE_DAYS
+}
+
+/// What a reward gives a member when its condition is met.
+enum RewardActionType {
+  GIVE_XP
+  ADD_ROLE
+  REMOVE_ROLE
+  UNLOCK_ACHIEVEMENT
+  GIVEAWAY_ENTRY
+}
+
+/// What a challenge asks members to do. V1 keeps these predefined
+/// (PRD section 7.9).
+enum ChallengeRequirementType {
+  MESSAGE_COUNT
+  STREAM_ATTENDANCE
+  WATCH_TIME_HOURS
+  LEVEL
+}
+
+/// Milestone types available in V1 (PRD section 7.10).
+enum AchievementType {
+  FIRST_STREAM
+  STREAM_ATTENDANCE_COUNT
+  WATCH_TIME_HOURS
+  MESSAGE_COUNT
+  MEMBER_AGE_DAYS
+  LEVEL
+}
+
+/// Categories of automatic moderation.
+enum ModerationRuleType {
+  /// Block messages containing configured words.
+  WORD_FILTER
+  /// Detect and punish message flooding.
+  SPAM
+  /// React to unusual join spikes.
+  RAID_PROTECTION
+}
+
+/// How a moderation rule responds.
+enum ModerationActionType {
+  DELETE_MESSAGE
+  WARN
+  TIMEOUT
+  KICK
+  BAN
+}
+
+/// Manual and automatic moderator actions. Doubles as the audit log
+/// (PRD section 7.11).
+enum ModerationActionTypeRecord {
+  WORD_FILTER_DELETE
+  SPAM_TIMEOUT
+  RAID_TIMEOUT
+  MANUAL_WARN
+  MANUAL_TIMEOUT
+  MANUAL_KICK
+  MANUAL_BAN
+}
+
+// ---------------------------------------------------------------------------
+// Auth: dashboard users and their Discord identity
+// ---------------------------------------------------------------------------
+
+/// A person who can sign in to the dashboard.
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  discordAccount DiscordAccount?
+
+  /// Server configurations this user has set up. Present for future
+  /// multi-server support; V1 resolves to a single guild.
+  guilds Guild[]
+
+  @@map("users")
+}
+
+/// The Discord identity behind a dashboard login.
+model DiscordAccount {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Discord snowflake of the account.
+  discordId  String  @unique
+  username   String
+  avatarHash String?
+
+  /// Set when the user has verified they can administer the guild.
+  isGuildAdmin Boolean @default(false)
+
+  @@map("discord_accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Community: the Discord server and its members
+// ---------------------------------------------------------------------------
+
+/// A Discord server Komu manages. V1 creates exactly one.
+model Guild {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Discord snowflake of the server.
+  discordId String  @unique
+  name      String
+  iconHash  String?
+
+  /// Set once Discord OAuth setup has completed for this server.
+  setupCompletedAt DateTime?
+
+  /// Dashboard user who completed setup.
+  ownerId String?
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  // --- XP settings (PRD section 7.5) ---
+  xpEnabled             Boolean @default(true)
+  xpMessageAmount       Int     @default(15)
+  /// Ignore messages shorter than this, to filter "lol" style spam.
+  xpMessageMinLength    Int     @default(3)
+  /// Seconds a member must wait between XP-granting messages.
+  xpMessageCooldownSecs Int     @default(60)
+  /// Maximum XP per member per day. Protects against grinding bots.
+  xpDailyCap            Int     @default(1000)
+
+  members          GuildMember[]
+  streamingAccounts StreamingAccount[]
+  streams          Stream[]
+  alertConfigs     AlertConfiguration[]
+  roleRules        RoleRule[]
+  rewards          Reward[]
+  challenges       Challenge[]
+  achievements     Achievement[]
+  moderationRules  ModerationRule[]
+
+  @@map("guilds")
+}
+
+/// A member of the Discord server, plus the counters the XP system uses.
+model GuildMember {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  /// Discord snowflake of the member.
+  discordId  String
+  username   String
+  nickname   String?
+  avatarHash String?
+
+  /// Discord role snowflakes currently held, refreshed by the bot.
+  roleIds String[] @default([])
+
+  /// When the member joined the Discord server. Drives the "OG" role rule.
+  joinedAt DateTime @default(now())
+
+  // --- Cached activity counters -------------------------------------------
+  /// Used for role rules and analytics. The authoritative XP history lives
+  /// in XPTransaction; these are stored totals so pages stay fast
+  /// (PRD section 14).
+  xp           Int @default(0)
+  level        Int @default(1)
+  messageCount Int @default(0)
+  /// Count of streams attended.
+  streamAttendanceCount Int @default(0)
+  /// Accumulated watch time, in minutes.
+  watchTimeMinutes      Int @default(0)
+
+  /// Timestamp of the last XP-granting message, for the message cooldown.
+  lastXpMessageAt DateTime?
+  /// Rolling daily XP total, used for the daily cap.
+  xpToday           Int       @default(0)
+  xpTodayResetAt    DateTime?
+
+  xpTransactions     XPTransaction[]
+  memberXp           MemberXP?
+  rewardGrants       RewardGrant[]
+  challengeProgress  ChallengeProgress[]
+  memberAchievements MemberAchievement[]
+  streamAttendance   StreamAttendance[]
+  moderationActions  ModerationActionRecord[] @relation("ActionTarget")
+
+  /// One member per Discord user per server.
+  @@unique([guildId, discordId])
+  @@index([guildId, xp])
+  @@index([guildId, level])
+  @@index([guildId, messageCount])
+  @@index([guildId, joinedAt])
+  @@map("guild_members")
+}
+
+// ---------------------------------------------------------------------------
+// Integrations: streaming accounts and stream sessions
+// ---------------------------------------------------------------------------
+
+/// A creator's channel on Twitch, YouTube or Kick, connected to a guild.
+model StreamingAccount {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  provider StreamingProvider
+
+  /// The creator's user/channel id as the provider knows it.
+  providerUserId String
+  username       String
+  displayName    String?
+  avatarUrl      String?
+
+  /// Tokens are stored encrypted-at-rest by the database provider. Never
+  /// expose these to the browser (PRD section 11).
+  accessToken  String?
+  refreshToken String?
+  tokenExpiresAt DateTime?
+
+  /// Set when the creator disconnects the account.
+  disconnectedAt DateTime?
+
+  streams       Stream[]
+  alertConfig   AlertConfiguration?
+
+  /// One account per creator per provider per guild.
+  @@unique([guildId, provider, providerUserId])
+  @@index([guildId, provider])
+  @@map("streaming_accounts")
+}
+
+/// One live session. A row is created when the creator goes live and closed
+/// when they stop. Alert de-duplication is keyed on this record
+/// (PRD section 7.4).
+model Stream {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  streamingAccountId String
+  streamingAccount   StreamingAccount @relation(fields: [streamingAccountId], references: [id], onDelete: Cascade)
+
+  /// Provider-assigned stream id, used to recognise the same session.
+  providerStreamId String
+
+  title           String
+  game            String?
+  thumbnailUrl    String?
+  viewerCount     Int?
+  startedAt       DateTime
+  endedAt         DateTime?
+
+  /// Set once the alert has been posted, so it is never sent twice for the
+  /// same session.
+  alertSentAt DateTime?
+
+  attendance StreamAttendance[]
+
+  @@unique([streamingAccountId, providerStreamId])
+  @@index([guildId, startedAt])
+  @@index([guildId, endedAt])
+  @@map("streams")
+}
+
+/// Records that a member was present for a stream. Discord cannot observe
+/// watch time directly, so V1 records explicit attendance.
+model StreamAttendance {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  streamId String
+  stream   Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// Set when the member reacted to the alert or ran `/attend`.
+  method String @default("REACTION")
+
+  @@unique([streamId, memberId])
+  @@index([memberId, createdAt])
+  @@map("stream_attendance")
+}
+
+// ---------------------------------------------------------------------------
+// Alerts
+// ---------------------------------------------------------------------------
+
+/// Per-provider alert settings for a guild.
+model AlertConfiguration {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  streamingAccountId String           @unique
+  streamingAccount   StreamingAccount @relation(fields: [streamingAccountId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(true)
+
+  /// Discord channel snowflake to post alerts in.
+  channelId String?
+  /// Optional role to mention. Must be a role the bot can read.
+  mentionRoleId String?
+  mentionEnabled Boolean @default(false)
+
+  messageMode AlertMessageMode @default(DEFAULT)
+  /// Creator's custom text. Supports {title}, {game}, {url}, {creator}.
+  customMessage String?
+
+  /// Embed presentation.
+  embedEnabled Boolean @default(true)
+  embedColor   String  @default("#5865F2")
+  showThumbnail Boolean @default(true)
+  showViewerCount Boolean @default(true)
+  showGame      Boolean @default(true)
+
+  /// Render the "Watch Now" button.
+  watchButtonEnabled Boolean @default(true)
+  watchButtonLabel   String  @default("Watch Now")
+
+  @@map("alert_configurations")
+}
+
+// ---------------------------------------------------------------------------
+// Progression: XP, levels and automatic roles
+// ---------------------------------------------------------------------------
+
+/// Append-only XP history. Totals on GuildMember are derived from these rows
+/// (IMPLEMENTATION_PLAN section 9).
+model XPTransaction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  guildId String
+
+  memberId String
+  member   GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// Positive to award, negative to deduct.
+  amount Int
+  source XPSource
+  /// Free-text note, e.g. "Reward: 10 hours watched".
+  reason String?
+
+  @@index([memberId, createdAt])
+  @@index([guildId, source, createdAt])
+  @@map("xp_transactions")
+}
+
+/// Stored level state. Kept separate from XPTransaction so level-up checks
+/// are a cheap read rather than a sum.
+model MemberXP {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberId String      @unique
+  member   GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  guildId String
+
+  totalXp Int
+  level   Int @default(1)
+  /// XP still needed to reach the next level.
+  xpToNextLevel Int
+
+  lastLevelUpAt DateTime?
+
+  @@map("member_xp")
+}
+
+/// Assign a Discord role when a condition is met (PRD section 7.6).
+model RoleRule {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  name   String
+  enabled Boolean @default(true)
+
+  metric   ProgressionMetric
+  /// Threshold to cross. Meaning depends on `metric`: total XP, level,
+  /// message count, streams attended, hours watched, or days since join.
+  threshold Int
+
+  /// Discord role snowflake to assign when the threshold is reached.
+  roleId String
+  roleName String
+
+  @@index([guildId, enabled])
+  @@map("role_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Rewards: condition -> action
+// ---------------------------------------------------------------------------
+
+model Reward {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  enabled     Boolean @default(true)
+
+  /// The condition side of the rule.
+  conditionMetric    ProgressionMetric
+  conditionThreshold Int
+
+  /// When true the reward may be granted repeatedly; otherwise it is granted
+  /// once per member.
+  repeatable Boolean @default(false)
+  /// Optional automatic deactivation once every member has been granted it.
+  stopWhenComplete Boolean @default(false)
+
+  actions    RewardAction[]
+  grants     RewardGrant[]
+
+  @@index([guildId, enabled])
+  @@map("rewards")
+}
+
+/// One effect of a reward. A reward can have several
+/// (e.g. 500 XP *and* the VIP role).
+model RewardAction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  rewardId String
+  reward   Reward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  type RewardActionType
+
+  /// Set when type is GIVE_XP.
+  xpAmount Int?
+  /// Set when type is ADD_ROLE or REMOVE_ROLE.
+  roleId   String?
+  roleName String?
+  /// Set when type is UNLOCK_ACHIEVEMENT.
+  achievementId String?
+  /// Set when type is GIVEAWAY_ENTRY. Identifies the giveaway being entered.
+  giveawayId String?
+
+  @@index([rewardId])
+  @@map("reward_actions")
+}
+
+/// Audit row for every reward granted to a member. Prevents duplicate grants
+/// (PRD section 7.8).
+model RewardGrant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  guildId String
+
+  rewardId String
+  reward   Reward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// Snapshot of the progress value that satisfied the condition.
+  progressValue Int
+  /// Set when a moderator granted this manually rather than automatically.
+  manualGrantedByDiscordId String?
+
+  @@index([rewardId, memberId])
+  @@index([guildId, createdAt])
+  @@map("reward_grants")
+}
+
+// ---------------------------------------------------------------------------
+// Challenges
+// ---------------------------------------------------------------------------
+
+model Challenge {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt()
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  enabled     Boolean @default(true)
+
+  /// Optional expiry. Null means the challenge runs until disabled.
+  endsAt DateTime?
+
+  /// XP granted to each member on completion.
+  xpReward Int @default(0)
+  /// Optional role granted on completion.
+  rewardRoleId   String?
+  rewardRoleName String?
+
+  requirements ChallengeRequirement[]
+  progress     ChallengeProgress[]
+
+  @@index([guildId, enabled])
+  @@map("challenges")
+}
+
+/// One line item of a challenge. All requirements must be met.
+model ChallengeRequirement {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  challengeId String
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  type      ChallengeRequirementType
+  threshold Int
+
+  /// Label shown in the dashboard, e.g. "Attend 3 streams".
+  label String?
+
+  @@index([challengeId])
+  @@map("challenge_requirements")
+}
+
+/// Per-member progress. One row per member per challenge, updated as activity
+/// arrives (PRD section 7.9).
+model ChallengeProgress {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+
+  challengeId String
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// Progress per requirement type, keyed by the enum value.
+  progress Json @default("{}")
+
+  completedAt  DateTime?
+  rewardGivenAt DateTime?
+
+  @@unique([challengeId, memberId])
+  @@index([guildId, completedAt])
+  @@map("challenge_progress")
+}
+
+// ---------------------------------------------------------------------------
+// Achievements
+// ---------------------------------------------------------------------------
+
+model Achievement {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String
+  /// Emoji or short icon shown in Discord and the dashboard.
+  icon        String
+  enabled     Boolean @default(true)
+  /// Hidden achievements reveal themselves only once unlocked.
+  hidden      Boolean @default(false)
+
+  type      AchievementType
+  threshold Int
+
+  /// XP granted on unlock.
+  xpReward Int @default(0)
+  /// Optional Discord role granted on unlock.
+  roleId   String?
+  roleName String?
+
+  unlockedBy MemberAchievement[]
+
+  @@unique([guildId, name])
+  @@index([guildId, enabled])
+  @@map("achievements")
+}
+
+model MemberAchievement {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  guildId String
+
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  unlockedAt DateTime @default(now())
+
+  /// Duplicate unlocks are prevented by this constraint.
+  @@unique([achievementId, memberId])
+  @@index([memberId, unlockedAt])
+  @@map("member_achievements")
+}
+
+// ---------------------------------------------------------------------------
+// Moderation
+// ---------------------------------------------------------------------------
+
+/// Configurable automatic moderation (PRD section 7.11).
+model ModerationRule {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  name    String
+  type    ModerationRuleType
+  enabled Boolean @default(true)
+
+  /// What to do when the rule matches.
+  action ModerationActionType @default(DELETE_MESSAGE)
+  /// Timeout length in minutes, for TIMEOUT actions.
+  actionDurationMins Int?
+
+  /// WORD_FILTER: matched words/phrases.
+  blockedWords String[] @default([])
+  /// WORD_FILTER: also warn the member.
+  warnOnMatch Boolean @default(false)
+
+  /// SPAM: messages allowed inside the window.
+  messageLimit Int?
+  /// SPAM: window length in seconds.
+  windowSeconds Int?
+
+  /// RAID_PROTECTION: joins inside the window that trigger lockdown.
+  joinThreshold Int?
+  /// RAID_PROTECTION: window length in seconds.
+  joinWindowSeconds Int?
+
+  /// Optional channel for moderation notices.
+  logChannelId String?
+
+  actions ModerationActionRecord[]
+
+  @@index([guildId, enabled])
+  @@map("moderation_rules")
+}
+
+/// Audit log of moderator and automated actions. Also stores warnings, which
+/// are counted rather than kept in a separate table.
+model ModerationActionRecord {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+
+  type ModerationActionTypeRecord
+
+  /// The member who was acted against.
+  targetMemberId String
+  targetMember   GuildMember @relation("ActionTarget", fields: [targetMemberId], references: [id], onDelete: Cascade)
+
+  /// The moderator responsible, or "SYSTEM" for automated actions.
+  moderatorDiscordId String @default("SYSTEM")
+  reason             String?
+
+  /// Set for timeout actions.
+  durationMins Int?
+  /// Set when the member was warned.
+  warningClearedAt DateTime?
+
+  ruleId String?
+  rule   ModerationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([guildId, createdAt])
+  @@index([targetMemberId, type])
+  @@map("moderation_actions")
+}

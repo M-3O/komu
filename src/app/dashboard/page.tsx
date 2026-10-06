@@ -1,0 +1,90 @@
+import { Suspense } from "react";
+
+import { getDashboardStats } from "@/lib/dashboard/get-dashboard-stats";
+
+export const metadata = { title: "Overview" };
+
+/**
+ * Dashboard overview.
+ *
+ * Reads a few cheap counts to confirm the database is connected. The real
+ * analytics page arrives in Phase 13.
+ *
+ * The data access sits in its own component behind `<Suspense>`: the outer
+ * page renders immediately and the stats stream in, which is what Cache
+ * Components expects for uncached data (database reads here).
+ */
+export default function DashboardPage() {
+  return (
+    <div className="flex flex-col gap-6">
+      <header>
+        <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
+      </header>
+
+      <Suspense fallback={<StatsSkeleton />}>
+        <DashboardStats />
+      </Suspense>
+
+      <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-6">
+        <h2 className="font-semibold">Next steps</h2>
+        <ol className="mt-3 flex list-inside list-decimal flex-col gap-1.5 text-sm text-[color:var(--color-komu-muted)]">
+          <li>Log in with Discord to confirm your server</li>
+          <li>Connect Twitch, YouTube or Kick</li>
+          <li>Choose the Discord channel for stream alerts</li>
+          <li>Enable XP for community activity</li>
+        </ol>
+      </section>
+    </div>
+  );
+}
+
+async function DashboardStats() {
+  const { guild, memberCount, streamingAccountCount } =
+    await getDashboardStats();
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-[color:var(--color-komu-muted)]">
+        {guild
+          ? `Connected to ${guild.name}`
+          : "No Discord server connected yet"}
+      </p>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Server" value={guild ? "Connected" : "Not set up"} />
+        <StatCard label="Members tracked" value={memberCount.toString()} />
+        <StatCard
+          label="Streaming channels"
+          value={streamingAccountCount.toString()}
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatsSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-hidden>
+      <div className="h-4 w-48 animate-pulse rounded bg-[color:var(--color-komu-surface-raised)]" />
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[0, 1, 2].map((index) => (
+          <div
+            key={index}
+            className="h-24 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-5">
+      <p className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}

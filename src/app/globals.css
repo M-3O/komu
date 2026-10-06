@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+/*
+ * Dark creator/gaming aesthetic (PRD section 8). Tokens live here so the
+ * palette stays consistent as pages are added.
+ */
+@theme {
+  --color-komu-bg: #0b0d12;
+  --color-komu-surface: #141821;
+  --color-komu-surface-raised: #1c2130;
+  --color-komu-border: #2a3142;
+  --color-komu-accent: #7c5cff;
+  --color-komu-accent-hover: #8f74ff;
+  --color-komu-live: #ff4d5e;
+  --color-komu-text: #e7eaf3;
+  --color-komu-muted: #8b93a7;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-komu-bg);
+  color: var(--color-komu-text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
