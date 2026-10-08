@@ -1,5 +1,6 @@
 import type { GuildMember } from "discord.js";
 
+import { unlockAchievementsForMember, type UnlockAchievementsResult } from "@/lib/achievements/unlock";
 import {
   grantChallengeCompletions,
   type GrantCompletionsResult,
@@ -17,13 +18,15 @@ import { grantEligibleRewards, type GrantRewardsResult } from "@/lib/rewards/gra
 /**
  * One place that reacts to a member's progress changing.
  *
- * Roles, rewards and challenges are all "condition -> effect" over the same
- * numbers, so they are checked together after the same events: a message, a
- * stream attendance reaction, and a member joining. Having one entry point is
- * what keeps a new event from wiring up one system and forgetting the others.
+ * Roles, rewards, challenges and achievements are all "condition -> effect"
+ * over the same numbers, so they are checked together after the same events:
+ * a message, a stream attendance reaction, and a member joining. Having one
+ * entry point is what keeps a new event from wiring up one system and
+ * forgetting the others.
  *
  * Nothing here throws. A role above the bot's highest role is a configuration
- * problem to report, not a reason to drop a member's XP or their other rewards.
+ * problem to report, not a reason to drop a member's XP or their other
+ * rewards.
  */
 
 const log = createLogger("bot");
@@ -32,6 +35,7 @@ export interface ProgressionResult {
   roles: ApplyRolesResult;
   rewards: GrantRewardsResult;
   challenges: UpdateChallengesResult & { payouts: GrantCompletionsResult };
+  achievements: UnlockAchievementsResult;
 }
 
 export interface ProgressionOptions {
@@ -67,6 +71,7 @@ export async function applyProgressionForMember(
       roles: { assigned: [], failed: [], alreadyHeld: 0, unsatisfied: 0 },
       rewards: { granted: [], failed: [], skipped: 0 },
       challenges: { ...empty, payouts: { granted: [], partial: [], alreadyGiven: 0 } },
+      achievements: { unlocked: [], partial: [], skipped: 0 },
     };
   }
 
@@ -91,7 +96,17 @@ export async function applyProgressionForMember(
 
   const payouts = await grantChallengeCompletions({ member, guildId: guildDbId });
 
-  return { roles, rewards, challenges: { ...challengeProgress, payouts } };
+  // Achievements run last: they read lifetime totals, so they should see
+  // anything the rewards and challenges just added rather than the values
+  // from before.
+  const achievements = await unlockAchievementsForMember({ member, guildId: guildDbId });
+
+  return {
+    roles,
+    rewards,
+    challenges: { ...challengeProgress, payouts },
+    achievements,
+  };
 }
 
 /**

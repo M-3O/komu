@@ -431,6 +431,54 @@ inflate XP — on every subsequent message.
 challenges. Challenges have no announcement channel configured, so this is
 where a member finds out how they are doing rather than waiting to be told.
 
+## Achievements
+
+A permanent milestone: a name, description, icon, and one requirement measured
+against everything a member has ever done.
+
+```text
+OG Member — Been in the server for 30 days
+🏆 100 XP
+```
+
+### An achievement is a lifetime check, a challenge is a window
+
+This is the only structural difference, and it decides where the numbers come
+from. A challenge counts what happened during a window, so it keeps its own
+counters. An achievement reads `GuildMember` totals directly, so it reuses the
+same `metricValue` from `lib/progression/metrics.ts` that roles and rewards
+use. Nothing is stored per member per achievement until they unlock it.
+
+`FIRST_STREAM` maps onto the ordinary attendance counter with a threshold of 1,
+rather than getting a code path of its own.
+
+### Unlocking pays out exactly once, and that is decided by the insert
+
+The unique constraint on `(achievementId, memberId)` is what makes an
+achievement one-shot. The insert uses `createMany({ skipDuplicates: true })` and
+its returned row count decides the payout:
+
+- count 1 → this call was first, so award the XP and role
+- count 0 → somebody else unlocked it in between, so pay nothing
+
+That ties paying out to actually being first, instead of checking and then
+writing as two steps that can disagree. It is also why `skipDuplicates` matters
+more here than catching the error would: on a busy server a re-check after a
+member has unlocked something is the normal case, and a caught unique-violation
+would log an error every time.
+
+### Hidden achievements
+
+A hidden achievement is not shown to a member until they unlock it, and its
+count is not revealed either, since that would leak that there is something to
+find. Unlocking still works normally — hiding affects display only.
+
+### Member view
+
+`/achievements` shows unlocked achievements and how far through the locked ones
+each member is. Unlocked achievements also appear on `/profile`, which already
+did so from Phase 6.
+
 ## Verifying changes
 
 ```bash
@@ -457,6 +505,7 @@ src/
 ├── components/     React components
 ├── lib/            Business logic and integrations
 │   ├── attendance/ Stream attendance from alert reactions
+│   ├── achievements/ Achievement conditions and unlocking
 │   ├── auth/       Sessions, Discord OAuth, permission checks
 │   ├── challenges/ Challenge progress, completion and payouts
 │   ├── config/     Environment validation
@@ -536,6 +585,7 @@ a global change may not show up for a while.
 | `/profile` | Shows your level, rank and streaks. |
 | `/leaderboard` | Top members by XP or activity. |
 | `/challenge` | Your progress on the current challenges. |
+| `/achievements` | Your achievements and what is still locked. |
 | `/reward` | Grant a reward to a member by hand. Needs `Administrator`. |
 
 ### Privileged intents
@@ -589,7 +639,7 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 10 are done, plus the stream-attendance mechanism that several
+Phases 0 to 11 are done, plus the stream-attendance mechanism that several
 later features depend on.
 
 | Phase | Scope                                       | Status |
@@ -607,7 +657,8 @@ later features depend on.
 | -     | Stream attendance capture                   | Done   |
 | 9     | Rewards                                     | Done   |
 | 10    | Challenges                                  | Done   |
-| 11    | Achievements                                | Next   |
+| 11    | Achievements                                | Done   |
+| 12    | Moderation                                  | Next   |
 | 12    | Moderation                                  | Todo   |
 | 13    | Analytics                                   | Todo   |
 

@@ -4,6 +4,7 @@ import type {
   ChatInputCommandInteraction,
 } from "discord.js";
 
+import { achievementsCommand, handleAchievements } from "./achievements";
 import { handleChallenge, challengeCommand } from "./challenge";
 import { handleHelp, helpCommand } from "./help";
 import { handleLeaderboard, leaderboardCommand } from "./leaderboard";
@@ -39,6 +40,7 @@ export const COMMANDS: BotCommand[] = [
   { definition: profileCommand, handle: handleProfile },
   { definition: leaderboardCommand, handle: handleLeaderboard },
   { definition: challengeCommand, handle: handleChallenge },
+  { definition: achievementsCommand, handle: handleAchievements },
   {
     definition: rewardCommand,
     handle: handleReward,
