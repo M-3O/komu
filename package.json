@@ -17,7 +17,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "bot": "tsx src/bot/index.ts",
-    "bot:register": "tsx src/bot/register-commands.ts"
+    "bot:register": "tsx src/bot/register-commands.ts",
+    "check:bot": "tsx scripts/check-bot.ts",
+    "verify": "npm run check:bot && npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

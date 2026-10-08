@@ -59,6 +59,8 @@ The dashboard is at <http://localhost:3000/dashboard>.
 | `npm run lint`        | ESLint                                      |
 | `npm run typecheck`   | Generate route types, then typecheck         |
 | `npm test`            | Unit tests                                  |
+| `npm run check:bot`   | Verify the bot's imports load cleanly        |
+| `npm run verify`      | Everything above, plus a production build    |
 | `npm run db:migrate`  | Create and apply a migration in development |
 | `npm run db:deploy`   | Apply migrations in production              |
 | `npm run db:seed`     | Load test data                              |
@@ -240,6 +242,46 @@ A role above the bot's highest role fails every time. The bot logs
 `ROLE_HIERARCHY`, rather than failing silently on every message. Move the
 bot's role above the role it needs to grant.
 
+## Leaderboards
+
+Available on `/dashboard/leaderboards` and via `/leaderboard`, for three
+rolling periods and two metrics.
+
+| Period   | Window      | XP reads from                | Activity reads from                    |
+| -------- | ----------- | ---------------------------- | ------------------------------------- |
+| Weekly   | Last 7 days | `XPTransaction` sum          | XP-earning messages in the window     |
+| Monthly  | Last 30 days| `XPTransaction` sum          | XP-earning messages in the window     |
+| All time | Everything  | `GuildMember.xp` (indexed)   | `GuildMember.messageCount` (indexed)  |
+
+Two deliberate choices worth knowing:
+
+**Rolling windows, not calendar weeks.** A calendar week starts empty every
+Monday and a calendar month on the 1st, so both would show an empty board for
+part of every period.
+
+**Moderator grants do not rank.** `XPSource.MANUAL` is excluded, because a
+moderator grant is administrative rather than earned, and including it would
+put whoever received the last grant at the top of the board.
+
+**Windowed activity counts only XP-earning messages.** The cooldown means most
+messages never become a transaction, so this is lower than the true message
+count. The dashboard says so rather than letting the number imply otherwise.
+All-time activity uses the real total, which is why the two differ.
+
+## Verifying changes
+
+```bash
+npm run verify
+```
+
+Runs the bot import check, typecheck, lint, tests, and the production build.
+
+`check:bot` exists because of a mistake worth repeating: a module reachable
+from the bot that carried `import "server-only"` stopped the bot from
+starting, while `tsc` and `next build` both passed. That happened twice, so
+there is now an explicit check. **Any `lib` module a bot command imports must
+not use `server-only`.**
+
 ## Project layout
 
 ```text
@@ -257,6 +299,7 @@ src/
 │   ├── db.ts       Shared Prisma client
 │   ├── guilds/     Discord server access
 │   ├── discord/    REST calls (channels, roles, posting)
+│   ├── leaderboards/ Periods and ranking queries
 │   ├── levels/     Level maths
 │   ├── logger.ts   Logging
 │   ├── roles/      Role rule evaluation and assignment
@@ -365,9 +408,9 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 7 are done: project setup, database schema, Discord sign-in, the
-bot, the Twitch integration, stream alerts, Discord activity with XP, and
-automatic roles.
+Phases 0 to 8 are done: project setup, database schema, Discord sign-in, the
+bot, the Twitch integration, stream alerts, Discord activity with XP,
+automatic roles, and leaderboards.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -380,7 +423,8 @@ automatic roles.
 | 5     | Stream alerts                               | Done   |
 | 6     | Discord activity, XP and levels             | Done   |
 | 7     | Automatic roles                             | Done   |
-| 8     | Leaderboards                                | Next   |
+| 8     | Leaderboards                                | Done   |
+| 9     | Rewards                                     | Next   |
 | 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.

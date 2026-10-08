@@ -4,6 +4,7 @@ import type {
 } from "discord.js";
 
 import { handleHelp, helpCommand } from "./help";
+import { handleLeaderboard, leaderboardCommand } from "./leaderboard";
 import { handleLevel, levelCommand } from "./level";
 import { handlePing, pingCommand } from "./ping";
 import { handleProfile, profileCommand } from "./profile";
@@ -31,6 +32,7 @@ export const COMMANDS: BotCommand[] = [
   { definition: setupCommand, handle: handleSetup },
   { definition: levelCommand, handle: handleLevel },
   { definition: profileCommand, handle: handleProfile },
+  { definition: leaderboardCommand, handle: handleLeaderboard },
 ];
 
 /** Look up a handler by command name. */

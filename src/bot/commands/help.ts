@@ -24,6 +24,7 @@ export async function handleHelp(
         "**`/ping`** - Confirm the bot is responsive.",
         "**`/level`** - See your XP and level.",
         "**`/profile`** - See a member's full activity.",
+        "**`/leaderboard`** - See the top community members.",
       ].join("\n"),
     )
     .setFooter({ text: "More commands arrive as features land." });
