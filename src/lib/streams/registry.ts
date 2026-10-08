@@ -4,6 +4,8 @@ import { StreamingProvider } from "@prisma/client";
 
 import { TwitchApiError } from "@/lib/twitch/client";
 import { twitchAdapter } from "@/lib/twitch/provider";
+import { kickAdapter } from "@/lib/kick/provider";
+import { youtubeAdapter } from "@/lib/youtube/provider";
 import { createLogger } from "@/lib/logger";
 import type { StreamingProviderAdapter } from "./types";
 
@@ -20,7 +22,8 @@ const log = createLogger("stream");
 const ADAPTERS: Partial<Record<StreamingProvider, StreamingProviderAdapter>> =
   {
     [StreamingProvider.TWITCH]: twitchAdapter,
-    // YouTube and Kick arrive in Phase 4's later passes.
+    [StreamingProvider.YOUTUBE]: youtubeAdapter,
+    [StreamingProvider.KICK]: kickAdapter,
   };
 
 /** The adapter for a provider, or null when it is not implemented yet. */

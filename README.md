@@ -70,8 +70,8 @@ The dashboard is at <http://localhost:3000/dashboard>.
 ## Streaming integrations
 
 Provider APIs are isolated behind one interface, so nothing outside
-`src/lib/twitch` (and later `src/lib/youtube` and `src/lib/kick`) needs to
-know a Twitch response shape. Callers get a `StreamInfo`:
+`src/lib/twitch`, `src/lib/youtube` and `src/lib/kick` needs to know any
+provider's response shape. Callers get a `StreamInfo`:
 
 ```text
 StreamInfo
@@ -106,11 +106,31 @@ Komu uses an **app access token**, not a user token. Reading whether a
 channel is live needs no user authorisation, so the creator never has to
 grant Komu access to their account and no refresh-token handling is needed.
 
-Channels are connected by typing a Twitch login or channel id on
-`/dashboard/streams`. The identifier is resolved through Twitch before
-anything is stored, so Komu saves Twitch's own ids and display name rather
-than whatever was typed. YouTube and Kick are listed in the schema but not
-yet implemented; asking for one returns "not supported yet".
+Channels are connected by typing an identifier on `/dashboard/streams`. It is
+resolved through the provider before anything is stored, so Komu saves the
+provider's own ids and display name rather than whatever was typed.
+
+Accepted for each provider:
+
+- **Twitch** — a login or a channel id
+- **YouTube** — a channel id, an `@handle`, or any YouTube URL (watch, channel,
+  or the legacy `/c/` and `/user/` paths)
+- **Kick** — a slug, an `@name`, or any kick.com URL
+
+### YouTube setup
+
+Create OAuth credentials in the Google Cloud Console, enable the **YouTube Data
+API v3**, and set `YOUTUBE_CLIENT_ID`. The client id doubles as the API key; the
+secret is unused, because a public API key needs no OAuth flow.
+
+**Read the quota note below before setting a poll interval.** Checking whether
+a YouTube channel is live costs 101 quota units per poll.
+
+### Kick setup
+
+Create an application at <https://kick.com/settings/developer> and set
+`KICK_CLIENT_ID` and `KICK_CLIENT_SECRET`. Komu requests only the read-only
+`channel:read` and `livestream:read` scopes.
 
 ## Stream alerts
 
@@ -623,6 +643,65 @@ The PRD asks for it and there is no data source, so the page shows it under
 "Not available yet" with the reason. A card reading zero would imply it was
 measured and found to be zero.
 
+### YouTube quota: read this before choosing a poll interval
+
+YouTube charges per request out of a daily allowance, and the two calls cost
+very different amounts:
+
+| Call | Units |
+| ---- | ----- |
+| `channels.list` (resolve a handle or id) | 1 |
+| `videos.list` (is this broadcast running) | 1 |
+| `search.list` (find the live video) | **100** |
+
+Asking whether a channel is live needs `search.list`, so **every YouTube poll
+costs 101 units**. The default daily allowance is 10,000, which means a
+60-second poll interval exhausts it in **under two hours** and then YouTube
+stops answering for the rest of the day.
+
+Use **`STREAM_POLL_INTERVAL_SECS=300`** (five minutes) or longer when YouTube is
+connected. Five minutes costs about 29,000 units a day for one channel, so even
+that needs a quota increase on a default project. A creator watching for the
+instant a stream goes live should use Twitch or Kick instead.
+
+A missed poll is not a missed alert: the next successful poll still reports the
+stream as live, so a longer interval delays the alert rather than losing it.
+
+### Both new providers authenticate without the creator's account
+
+Twitch uses an app token, YouTube an API key (the client id), and Kick the
+application's client credentials with read-only scopes. In every case the
+creator never has to connect their streaming account to Komu, and neither
+`channel:write` nor any equivalent is ever requested.
+
+### What each provider can and cannot report
+
+| | Twitch | YouTube | Kick |
+| --- | --- | --- | --- |
+| Category / game | yes | no | no |
+| Viewer count | yes | yes | yes |
+| Thumbnail | yes | yes | no |
+| Start time | yes | yes | yes |
+
+Where a provider has no field, `StreamInfo` gets `null` rather than a guessed
+URL. A guessed thumbnail would render as a broken image, which is worse than an
+absent one.
+
+YouTube thumbnails are walked largest-first because `maxres` only exists for
+high-resolution uploads, so picking a fixed key would hand a 120px image for most
+channels. YouTube titles arrive HTML-escaped, so `Bob&#39;s Stream` is decoded
+to `Bob's Stream` before it reaches Discord.
+
+### Live detection differs per provider, deliberately
+
+- **Twitch** returns an empty array when the channel is offline.
+- **YouTube** keeps `liveStreamingDetails` on a broadcast *after* it ends, so
+  presence of that block is not enough — an `actualEndTime` means it finished.
+  Without that check every past stream would re-alert.
+- **Kick** only includes a `livestream` block while the channel is live, so
+  absence is the signal. `is_live` is checked as well, in case a block is
+  present but stale.
+
 ## Verifying changes
 
 ```bash
@@ -667,6 +746,8 @@ src/
 │   ├── roles/      Role rule evaluation and assignment
 │   ├── streams/    Provider interface, live status, alert polling
 │   ├── twitch/     Twitch Helix client and normaliser
+│   ├── youtube/    YouTube Data API client and normaliser
+│   ├── kick/       Kick public API client and normaliser
 │   └── xp/         XP awards, daily window, anti-abuse rules
 ├── instrumentation.ts  Starts the optional in-process poller
 ├── bot/            Discord bot (its own process)
@@ -790,8 +871,8 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 13 are done. That is every numbered phase in the implementation
-plan.
+Phases 0 to 13 are done, including 4b. That is every numbered phase in the
+implementation plan.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -800,7 +881,7 @@ plan.
 | 2     | Discord OAuth                               | Done   |
 | 3     | Discord bot foundation                      | Done   |
 | 4     | Streaming integrations (Twitch 1st)         | Done   |
-| 4b    | Streaming integrations (YouTube, Kick)      | Todo   |
+| 4b    | Streaming integrations (YouTube, Kick)      | Done   |
 | 5     | Stream alerts                               | Done   |
 | 6     | Discord activity, XP and levels             | Done   |
 | 7     | Automatic roles                             | Done   |
@@ -833,6 +914,9 @@ plan.
   not a way past the filter.
 - **Moderation commands need `Administrator`.** A server that wants a separate
   Moderator role cannot have one yet.
+- **YouTube polling is quota-bound.** Every poll costs 101 units against a
+  default 10,000 per day, so the interval must be five minutes or longer. This
+  is YouTube's pricing, not a Komu limit.
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 

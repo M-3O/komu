@@ -6,27 +6,50 @@ import { StreamingProvider } from "@prisma/client";
 /**
  * The registry is the only place feature code should reach a provider
  * through, so these checks guard the lookup itself rather than any provider.
+ *
+ * All three V1 providers are implemented. This file was written when only
+ * Twitch existed and asserted the other two were absent; the two assertions it
+ * got wrong failed the moment they landed, which is the point of having it.
  */
+
+const IMPLEMENTED = [
+  StreamingProvider.TWITCH,
+  StreamingProvider.YOUTUBE,
+  StreamingProvider.KICK,
+];
+
 describe("provider registry", () => {
-  it("resolves Twitch", () => {
-    expect(getStreamingProvider(StreamingProvider.TWITCH)).not.toBeNull();
-    expect(isProviderAvailable(StreamingProvider.TWITCH)).toBe(true);
+  it("resolves every implemented provider", () => {
+    for (const provider of IMPLEMENTED) {
+      expect(getStreamingProvider(provider)).not.toBeNull();
+      expect(isProviderAvailable(provider)).toBe(true);
+    }
   });
 
-  it("returns null for providers that are not implemented yet", () => {
-    // YouTube and Kick arrive later in Phase 4.
-    expect(getStreamingProvider(StreamingProvider.YOUTUBE)).toBeNull();
-    expect(getStreamingProvider(StreamingProvider.KICK)).toBeNull();
-    expect(isProviderAvailable(StreamingProvider.YOUTUBE)).toBe(false);
+  it("lists exactly the implemented providers", () => {
+    expect(availableProviders().sort()).toEqual([...IMPLEMENTED].sort());
   });
 
-  it("lists only implemented providers", () => {
-    expect(availableProviders()).toEqual([StreamingProvider.TWITCH]);
+  it("exposes each adapter's own provider", () => {
+    // A copy-paste slip returning the wrong adapter would otherwise go
+    // unnoticed until alerts said "Twitch" for a YouTube stream.
+    for (const provider of IMPLEMENTED) {
+      expect(getStreamingProvider(provider)?.provider).toBe(provider);
+    }
   });
 
-  it("exposes the provider on its own adapter", () => {
-    expect(getStreamingProvider(StreamingProvider.TWITCH)?.provider).toBe(
-      StreamingProvider.TWITCH,
-    );
+  it("gives every adapter the three methods the interface requires", () => {
+    for (const provider of IMPLEMENTED) {
+      const adapter = getStreamingProvider(provider);
+
+      expect(typeof adapter?.getAccount).toBe("function");
+      expect(typeof adapter?.getLiveStream).toBe("function");
+      expect(typeof adapter?.isLive).toBe("function");
+    }
+  });
+
+  it("returns null for a provider that does not exist", () => {
+    expect(getStreamingProvider("NOT_A_PROVIDER" as StreamingProvider)).toBeNull();
+    expect(isProviderAvailable("NOT_A_PROVIDER" as StreamingProvider)).toBe(false);
   });
 });
