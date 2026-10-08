@@ -20,6 +20,7 @@ export const DASHBOARD_NAV: NavSection[] = [
     items: [
       { href: "/dashboard", label: "Overview", phase: 0 },
       { href: "/dashboard/streams", label: "Channels", phase: 4 },
+      { href: "/dashboard/alerts", label: "Stream Alerts", phase: 5 },
     ],
   },
   {

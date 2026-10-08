@@ -110,6 +110,60 @@ anything is stored, so Komu saves Twitch's own ids and display name rather
 than whatever was typed. YouTube and Kick are listed in the schema but not
 yet implemented; asking for one returns "not supported yet".
 
+## Stream alerts
+
+Configure alerts on `/dashboard/alerts`. Channel and role lists come from
+Discord, so you pick from real options rather than pasting ids. The
+**Send test alert** button posts a real message so you can confirm the
+channel and role before waiting for a stream.
+
+### How detection works
+
+V1 polls the streaming provider on a schedule. The plan explicitly allows
+this, and the polling logic is isolated in `lib/streams/poller.ts` so it can
+be replaced by webhooks or a real job system later without touching the
+rest of the app.
+
+One pass checks every connected channel, decides what changed, and acts.
+The decision lives in `lib/streams/decide-alert.ts` as a pure function,
+because "alert exactly once per live session" is the rule worth testing
+properly.
+
+Alerts are sent over the Discord REST API, not the bot's gateway
+connection, so detection works whether or not `npm run bot` is running.
+
+### Triggering a pass
+
+Pick one. Setting both means overlapping passes.
+
+**External cron** (recommended for hosted deployments):
+
+```bash
+curl -H "x-poll-secret: $STREAM_POLL_SECRET" \
+  https://your-app.example/api/internal/poll-streams
+```
+
+**In-process timer** (self-hosted). Set `STREAM_POLL_INTERVAL_SECS=60` and
+restart. Leave it empty otherwise, so the app never polls on its own.
+
+The endpoint refuses to run when `STREAM_POLL_SECRET` is unset, and compares
+the secret in constant time. Without that, anyone who found the URL could
+use your bot to send messages.
+
+A plain timer is not reliable on platforms that freeze idle instances. That
+is why the endpoint exists as an alternative, and why the interval is opt-in.
+
+### Behaviour worth knowing
+
+- **Alerts are deduplicated** on the provider's stream id, so one live
+  session never produces two alerts no matter how often the poll runs.
+- **A provider outage does not look like an ended stream.** If Twitch cannot
+  be reached, the channel is skipped and any open session is left alone.
+- **A failed alert is retried.** The session is marked as announced only
+  after Discord accepts the message.
+- **Offline is tracked.** Sessions get an end time, which is what lets a
+  later stream be recognised as new.
+
 ## Project layout
 
 ```text
@@ -126,10 +180,12 @@ src/
 │   ├── dashboard/  Dashboard queries and navigation
 │   ├── db.ts       Shared Prisma client
 │   ├── guilds/     Discord server access
+│   ├── discord/    REST calls (channels, roles, posting)
 │   ├── levels/     Level maths
 │   ├── logger.ts   Logging
-│   ├── streams/    Provider-neutral interface and live status
+│   ├── streams/    Provider interface, live status, alert polling
 │   └── twitch/     Twitch Helix client and normaliser
+├── instrumentation.ts  Starts the optional in-process poller
 ├── bot/            Discord bot (its own process)
 │   ├── index.ts      Entry point
 │   ├── config.ts     Intents and credentials
@@ -231,8 +287,8 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 4 are done: project setup, database schema, Discord sign-in, the
-bot, and the Twitch integration.
+Phases 0 to 5 are done: project setup, database schema, Discord sign-in, the
+bot, the Twitch integration, and stream alerts.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -242,7 +298,7 @@ bot, and the Twitch integration.
 | 3     | Discord bot foundation                      | Done   |
 | 4     | Streaming integrations (Twitch 1st)         | Done   |
 | 4b    | Streaming integrations (YouTube, Kick)      | Next   |
-| 5     | Stream alerts                               | Todo   |
+| 5     | Stream alerts                               | Done   |
 | 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
@@ -267,6 +323,11 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
   re-checked against the user's live guild list, and the server name and icon
   come from Discord's response rather than the form.
 - Every dashboard mutation must be permission-checked server-side.
+- The alert settings form verifies the chosen channel and role against the
+  guild's real channel and role list before saving, so a tampered form
+  cannot point alerts at another server's channel.
+- `STREAM_POLL_SECRET` protects the polling endpoint, which can post to
+  Discord on your behalf.
 
 ## Bot permissions
 

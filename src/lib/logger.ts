@@ -6,7 +6,13 @@
  * logger later without touching call sites.
  */
 
-export type LogScope = "server" | "bot" | "db" | "auth" | "stream";
+export type LogScope =
+  | "server"
+  | "bot"
+  | "db"
+  | "auth"
+  | "stream"
+  | "discord";
 
 function write(
   scope: LogScope,
