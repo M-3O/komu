@@ -3,16 +3,16 @@ import type { Client, GuildMember } from "discord.js";
 
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
-import { applyRoleRulesForMember } from "@/lib/roles/apply-rules";
+import { tryApplyProgression } from "@/bot/services/progression";
 
 const log = createLogger("bot");
 
 /**
- * Check role rules when someone joins.
+ * Check roles and rewards when someone joins.
  *
- * Covers rules whose threshold is already met at join time, such as a
- * "joined before" role. Rules that need time to accrue are picked up by the
- * message handler.
+ * Covers anything whose threshold is already met at join time, such as a
+ * "joined before" role or a zero-day reward. Anything that needs time to
+ * accrue is picked up by the message handler.
  */
 export function registerGuildMemberAdd(client: Client): void {
   client.on(Events.GuildMemberAdd, (member: GuildMember) => {
@@ -52,7 +52,7 @@ async function onMemberJoin(member: GuildMember) {
       },
     });
 
-    await applyRoleRulesForMember(member, guild.id);
+    await tryApplyProgression(member, guild.id);
   } catch (error) {
     log.error("Could not handle a new member", {
       guildId: member.guild.id,

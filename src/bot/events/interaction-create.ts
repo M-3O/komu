@@ -6,7 +6,7 @@ import {
 import type { Client } from "discord.js";
 
 import { createLogger } from "@/lib/logger";
-import { getHandler } from "../commands";
+import { getAutocompleteHandler, getHandler } from "../commands";
 
 const log = createLogger("bot");
 
@@ -19,6 +19,26 @@ const log = createLogger("bot");
  */
 export function registerInteractionCreate(client: Client): void {
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
+    // Autocomplete arrives as its own interaction type and must be answered
+    // before the command is ever run, so it is routed first.
+    if (interaction.isAutocomplete()) {
+      const autocomplete = getAutocompleteHandler(interaction.commandName);
+
+      if (autocomplete) {
+        try {
+          await autocomplete(interaction);
+        } catch (error) {
+          log.error("Autocomplete failed", {
+            commandName: interaction.commandName,
+            guildId: interaction.guildId,
+            reason: error instanceof Error ? error.message : "unknown",
+          });
+        }
+      }
+
+      return;
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;

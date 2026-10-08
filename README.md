@@ -280,11 +280,8 @@ Alert posts to Discord (message id stored on the Stream row)
    ↓
 A member reacts to that message
    ↓
-Attendance recorded, 25 XP, role rules re-checked
+Attendance recorded, 25 XP, roles and rewards re-checked
 ```
-
-This unblocks the features that depend on attendance: attendance rewards,
-challenges, achievements, and the stream-attendance role metric.
 
 **What a reaction actually proves:** someone was in the channel when the
 alert posted. It is engagement, not verified watch time. Watch time is
@@ -295,8 +292,66 @@ is why the watch-time role metric and watch-time rewards stay unavailable.
 `skipDuplicates`, not a caught error. A busy server produces repeat reactions
 constantly, and the try/catch version logged a `prisma:error` for each one.
 
-Role rules are re-checked after attendance, so a "3 streams attended" role
-appears without waiting for the next message.
+Roles and rewards are re-checked after attendance, so a "3 streams attended"
+role appears without waiting for the next message.
+
+## Rewards
+
+A reward is a **condition** over a metric, plus one **action**.
+
+```text
+Condition: Level reached 5
+Action:    Give 500 XP
+```
+
+The decision is a pure function in `lib/rewards/evaluate.ts`, so the rules
+handing out real XP and real roles are testable without Discord or a
+database. Executing the actions is separate, in `lib/rewards/grant.ts`.
+
+Roles and rewards are both "condition → effect" over the same numbers, so the
+metric maths lives in one place, `lib/progression/metrics.ts`, and both import
+it. A threshold therefore means the same thing whether it is on a role or a
+reward.
+
+### Conditions
+
+`Level reached`, `Total XP reached`, `Messages sent`, `Streams attended`, and
+`Days in server`.
+
+Hours watched is deliberately absent: nothing collects watch time, so the
+condition could never fire. The dashboard lists it under "Not available yet"
+with the reason rather than offering a rule that silently does nothing.
+
+### Actions
+
+`Give XP`, `Give a role`, `Take away a role`, `Unlock an achievement`.
+
+Giveaway entry is in the schema but not offered. There is no `Giveaway` entity
+for an entry to be recorded against, so offering it would produce a reward
+that looks configured and does nothing.
+
+### Granting
+
+A one-shot reward is granted once per member. The check is a query against
+`RewardGrant` rather than a unique constraint, because repeatable rewards
+legally have many grants for the same pair.
+
+Rewards bypass the daily XP cap. The cap exists to stop grinding from
+messages; a creator's reward is a deliberate grant.
+
+**A failed action still records the grant.** If a role is above the bot's
+highest role, the reward is not retried on every subsequent message. The
+failure is reported so the creator can fix the role instead of watching
+nothing happen.
+
+### Granting by hand
+
+`/reward @member Reward name` in Discord. It needs `Administrator`, read from
+the caller's live Discord permissions rather than anything the client sent.
+
+A moderator can re-grant a reward a member already has, but **cannot grant one
+they have not earned**. Without that limit the command would be an XP printer
+with extra steps.
 
 ## Verifying changes
 
@@ -333,6 +388,8 @@ src/
 │   ├── leaderboards/ Periods and ranking queries
 │   ├── levels/     Level maths
 │   ├── logger.ts   Logging
+│   ├── progression/ Shared metric maths used by roles and rewards
+│   ├── rewards/    Reward evaluation, granting and history
 │   ├── roles/      Role rule evaluation and assignment
 │   ├── streams/    Provider interface, live status, alert polling
 │   ├── twitch/     Twitch Helix client and normaliser
@@ -343,7 +400,8 @@ src/
 │   ├── config.ts     Intents and credentials
 │   ├── commands/     Slash command definitions and handlers
 │   ├── events/       Gateway event handlers
-│   ├── services/     Role, moderation and message helpers
+│   ├── permissions.ts  Live Discord permission checks
+│   ├── services/     Progression, moderation and message helpers
 │   └── register-commands.ts
 └── proxy.ts        Sends signed-out visitors to the login page
 prisma/
@@ -387,6 +445,18 @@ npm run bot:register              # globally, can take up to an hour
 
 Use `--guild` while developing. Discord caches global commands aggressively, so
 a global change may not show up for a while.
+
+### Slash commands
+
+| Command | What it does |
+| ------- | ------------ |
+| `/help` | Lists the commands. |
+| `/ping` | Confirms the bot is responsive. |
+| `/setup` | Reports configuration and missing permissions. |
+| `/level` | Shows your own XP and level. |
+| `/profile` | Shows your level, rank and streaks. |
+| `/leaderboard` | Top members by XP or activity. |
+| `/reward` | Grant a reward to a member by hand. Needs `Administrator`. |
 
 ### Privileged intents
 
@@ -439,7 +509,7 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 8 are done, plus the stream-attendance mechanism that several
+Phases 0 to 9 are done, plus the stream-attendance mechanism that several
 later features depend on.
 
 | Phase | Scope                                       | Status |
@@ -449,14 +519,29 @@ later features depend on.
 | 2     | Discord OAuth                               | Done   |
 | 3     | Discord bot foundation                      | Done   |
 | 4     | Streaming integrations (Twitch 1st)         | Done   |
-| 4b    | Streaming integrations (YouTube, Kick)      | Next   |
+| 4b    | Streaming integrations (YouTube, Kick)      | Todo   |
 | 5     | Stream alerts                               | Done   |
 | 6     | Discord activity, XP and levels             | Done   |
 | 7     | Automatic roles                             | Done   |
 | 8     | Leaderboards                                | Done   |
 | -     | Stream attendance capture                   | Done   |
-| 9     | Rewards                                     | Next   |
-| 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
+| 9     | Rewards                                     | Done   |
+| 10    | Challenges                                  | Next   |
+| 11    | Achievements                                | Todo   |
+| 12    | Moderation                                  | Todo   |
+| 13    | Analytics                                   | Todo   |
+
+### Known gaps in V1
+
+- **Watch time** is never collected. Discord exposes no watch telemetry, so
+  hours-watched is not offered as a role rule or a reward condition.
+- **Giveaway entries** have no `Giveaway` entity to record against, so that
+  reward action is not offered.
+- **Membership-age roles and rewards** are evaluated on join and on activity,
+  not on a daily sweep. A silent member misses the threshold until they
+  interact.
+- **`/dashboard/xp`** is listed in the sidebar but not built. XP settings are
+  editable in the database only.
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 

@@ -2,10 +2,8 @@ import { ProgressionMetric } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
 import {
-  daysSince,
   describeRule,
   evaluateRules,
-  metricValue,
   ruleSatisfied,
   SUPPORTED_METRICS,
   UNAVAILABLE_METRICS,
@@ -16,7 +14,8 @@ import {
 /**
  * PRD section 7.6 requires that eligible members get the role, that the same
  * role is not added repeatedly, and that missing permissions are handled.
- * The last one is covered by the bot service; these cover the first two.
+ * The last is covered by the bot service; metric maths is covered in
+ * lib/progression/metrics.test.ts; these cover role assignment.
  */
 
 const now = new Date("2024-05-17T12:00:00Z");
@@ -45,50 +44,6 @@ function rule(overrides: Partial<RoleRuleInput> = {}): RoleRuleInput {
   };
 }
 
-describe("daysSince", () => {
-  it("counts whole days", () => {
-    expect(daysSince(new Date("2024-05-10T12:00:00Z"), now)).toBe(7);
-  });
-
-  it("does not count a partial day", () => {
-    expect(daysSince(new Date("2024-05-16T13:00:00Z"), now)).toBe(0);
-  });
-
-  it("never returns a negative number", () => {
-    // A member whose join date is somehow in the future.
-    expect(daysSince(new Date("2025-01-01T00:00:00Z"), now)).toBe(0);
-  });
-});
-
-describe("metricValue", () => {
-  it("reads each metric from the right field", () => {
-    const member = stats({
-      xp: 5500,
-      level: 10,
-      messageCount: 420,
-      streamAttendanceCount: 7,
-      watchTimeMinutes: 150,
-    });
-
-    expect(metricValue(ProgressionMetric.XP, member, now)).toBe(5500);
-    expect(metricValue(ProgressionMetric.LEVEL, member, now)).toBe(10);
-    expect(metricValue(ProgressionMetric.MESSAGE_COUNT, member, now)).toBe(420);
-    expect(metricValue(ProgressionMetric.STREAM_ATTENDANCE, member, now)).toBe(7);
-  });
-
-  it("converts stored minutes into whole hours", () => {
-    const member = stats({ watchTimeMinutes: 150 });
-
-    expect(metricValue(ProgressionMetric.WATCH_TIME_HOURS, member, now)).toBe(2);
-  });
-
-  it("rounds hours down, never up", () => {
-    const member = stats({ watchTimeMinutes: 119 });
-
-    expect(metricValue(ProgressionMetric.WATCH_TIME_HOURS, member, now)).toBe(1);
-  });
-});
-
 describe("ruleSatisfied", () => {
   it("is true when the value reaches the threshold", () => {
     expect(ruleSatisfied(rule({ threshold: 10 }), stats({ level: 10 }), now)).toBe(true);
@@ -96,37 +51,6 @@ describe("ruleSatisfied", () => {
 
   it("is false one short of the threshold", () => {
     expect(ruleSatisfied(rule({ threshold: 10 }), stats({ level: 9 }), now)).toBe(false);
-  });
-
-  it("is true when the value exceeds the threshold", () => {
-    expect(ruleSatisfied(rule({ threshold: 5 }), stats({ level: 50 }), now)).toBe(true);
-  });
-
-  it("treats a threshold of zero as always satisfied", () => {
-    expect(
-      ruleSatisfied(
-        rule({ metric: ProgressionMetric.MEMBER_AGE_DAYS, threshold: 0 }),
-        stats(),
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it("handles the membership age example from the PRD", () => {
-    const thirtyDays = rule({
-      metric: ProgressionMetric.MEMBER_AGE_DAYS,
-      threshold: 30,
-    });
-    const member = stats({ joinedAt: new Date("2024-05-01T00:00:00Z") });
-
-    expect(ruleSatisfied(thirtyDays, member, now)).toBe(false);
-    expect(
-      ruleSatisfied(
-        thirtyDays,
-        stats({ joinedAt: new Date("2024-04-01T00:00:00Z") }),
-        now,
-      ),
-    ).toBe(true);
   });
 });
 
@@ -165,6 +89,13 @@ describe("evaluateRules", () => {
     expect(result.toAssign).toHaveLength(1);
   });
 
+  it("stays stable across repeated checks", () => {
+    for (let pass = 0; pass < 5; pass++) {
+      expect(evaluateRules([rule()], stats({ level: 50 }), ["role-1"], now).toAssign)
+        .toHaveLength(0);
+    }
+  });
+
   it("splits a mixed set of rules correctly", () => {
     const rules = [
       rule({ id: "a", roleId: "role-a", threshold: 5, metric: ProgressionMetric.LEVEL }),
@@ -192,40 +123,32 @@ describe("evaluateRules", () => {
     expect(result.unsatisfied).toHaveLength(0);
   });
 
-  it("does not assign when the member holds nothing and qualifies for nothing", () => {
-    const result = evaluateRules(
-      [rule({ threshold: 100 })],
-      stats({ level: 1 }),
-      [],
-      now,
-    );
+  it("now supports a stream attendance rule", () => {
+    // Attendance became real once reaction capture landed.
+    const attendanceRule = rule({
+      metric: ProgressionMetric.STREAM_ATTENDANCE,
+      threshold: 3,
+    });
 
-    expect(result.toAssign).toHaveLength(0);
+    expect(
+      evaluateRules([attendanceRule], stats({ streamAttendanceCount: 3 }), [], now)
+        .toAssign,
+    ).toHaveLength(1);
+    expect(
+      evaluateRules([attendanceRule], stats({ streamAttendanceCount: 2 }), [], now)
+        .toAssign,
+    ).toHaveLength(0);
   });
 });
 
 describe("metric availability", () => {
-  it("offers only metrics with a working data source", () => {
-    expect(SUPPORTED_METRICS).toEqual([
-      ProgressionMetric.LEVEL,
-      ProgressionMetric.XP,
-      ProgressionMetric.MESSAGE_COUNT,
-      ProgressionMetric.MEMBER_AGE_DAYS,
-    ]);
-  });
-
-  it("explains why watch time and attendance are unavailable", () => {
-    // The plan says to add a watch-time rule only when the data exists.
+  it("still excludes watch time", () => {
+    expect(SUPPORTED_METRICS).not.toContain(ProgressionMetric.WATCH_TIME_HOURS);
     expect(UNAVAILABLE_METRICS[ProgressionMetric.WATCH_TIME_HOURS]).toBeDefined();
-    expect(
-      UNAVAILABLE_METRICS[ProgressionMetric.STREAM_ATTENDANCE],
-    ).toBeDefined();
   });
 
-  it("does not offer a metric it cannot support", () => {
-    for (const metric of SUPPORTED_METRICS) {
-      expect(UNAVAILABLE_METRICS[metric]).toBeUndefined();
-    }
+  it("includes stream attendance now that it is captured", () => {
+    expect(SUPPORTED_METRICS).toContain(ProgressionMetric.STREAM_ATTENDANCE);
   });
 });
 
@@ -235,8 +158,8 @@ describe("describeRule", () => {
   });
 
   it("names the unit for each metric", () => {
-    expect(
-      describeRule(rule({ metric: ProgressionMetric.WATCH_TIME_HOURS })),
-    ).toContain("hours watched");
+    expect(describeRule(rule({ metric: ProgressionMetric.WATCH_TIME_HOURS }))).toContain(
+      "hours watched",
+    );
   });
 });

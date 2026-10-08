@@ -10,7 +10,7 @@ import type {
 import { recordStreamAttendance } from "@/lib/attendance/record-attendance";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
-import { applyRoleRulesForMember } from "@/lib/roles/apply-rules";
+import { tryApplyProgression } from "@/bot/services/progression";
 
 const log = createLogger("stream");
 
@@ -82,10 +82,10 @@ async function onReactionAdd(
       });
     }
 
-    // Attendance can satisfy a STREAM_ATTENDANCE role rule, so rules are
+    // Attendance can satisfy an attendance role rule or reward, so both are
     // re-checked here as well as after messages.
     if (member) {
-      await applyRoleRulesForMember(member, guild.id);
+      await tryApplyProgression(member, guild.id);
     }
   } catch (error) {
     log.error("Could not record attendance", {

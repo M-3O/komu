@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { COMMANDS, getHandler, isGuildAdmin } from "./index";
+import { isGuildAdmin } from "../permissions";
+import { COMMANDS, getAutocompleteHandler, getHandler } from "./index";
 
 /**
  * Guards the command registry.
@@ -37,12 +38,33 @@ describe("command registry", () => {
     expect(getHandler("help")).toBeTypeOf("function");
     expect(getHandler("setup")).toBeTypeOf("function");
     expect(getHandler("ping")).toBeTypeOf("function");
+    expect(getHandler("reward")).toBeTypeOf("function");
   });
 
   it("returns undefined for an unknown command", () => {
     expect(getHandler("definitely-not-a-command")).toBeUndefined();
   });
 
+  it("gives autocomplete handlers only to commands that use them", () => {
+    for (const command of COMMANDS) {
+      if (!command.autocomplete) continue;
+
+      // A command whose options use autocomplete must have a handler, or
+      // Discord shows no suggestions and nothing explains why.
+      const json = command.definition.toJSON();
+      const usesAutocomplete = JSON.stringify(json).includes('"autocomplete":true');
+
+      expect(usesAutocomplete).toBe(true);
+      expect(getAutocompleteHandler(command.definition.name)).toBe(command.autocomplete);
+    }
+  });
+
+  it("has an autocomplete handler for /reward", () => {
+    expect(getAutocompleteHandler("reward")).toBeTypeOf("function");
+  });
+});
+
+describe("isGuildAdmin", () => {
   it("treats a missing permission object as not-admin", () => {
     const fake = { memberPermissions: null } as never;
     expect(isGuildAdmin(fake)).toBe(false);

@@ -1,5 +1,6 @@
 import type {
   SlashCommandOptionsOnlyBuilder,
+  AutocompleteInteraction,
   ChatInputCommandInteraction,
 } from "discord.js";
 
@@ -8,6 +9,7 @@ import { handleLeaderboard, leaderboardCommand } from "./leaderboard";
 import { handleLevel, levelCommand } from "./level";
 import { handlePing, pingCommand } from "./ping";
 import { handleProfile, profileCommand } from "./profile";
+import { handleReward, handleRewardAutocomplete, rewardCommand } from "./reward";
 import { handleSetup, setupCommand } from "./setup";
 
 /**
@@ -24,6 +26,8 @@ import { handleSetup, setupCommand } from "./setup";
 export interface BotCommand {
   definition: SlashCommandOptionsOnlyBuilder;
   handle: (interaction: ChatInputCommandInteraction) => Promise<void>;
+  /** Only for commands whose options use `setAutocomplete(true)`. */
+  autocomplete?: (interaction: AutocompleteInteraction) => Promise<void>;
 }
 
 export const COMMANDS: BotCommand[] = [
@@ -33,6 +37,11 @@ export const COMMANDS: BotCommand[] = [
   { definition: levelCommand, handle: handleLevel },
   { definition: profileCommand, handle: handleProfile },
   { definition: leaderboardCommand, handle: handleLeaderboard },
+  {
+    definition: rewardCommand,
+    handle: handleReward,
+    autocomplete: handleRewardAutocomplete,
+  },
 ];
 
 /** Look up a handler by command name. */
@@ -42,12 +51,9 @@ export function getHandler(
   return COMMANDS.find((command) => command.definition.name === name)?.handle;
 }
 
-/**
- * Check whether the caller may run an admin command.
- *
- * The check is against the caller's live Discord permissions, never anything
- * the client sent (PRD section 9).
- */
-export function isGuildAdmin(interaction: ChatInputCommandInteraction): boolean {
-  return interaction.memberPermissions?.has("Administrator") ?? false;
+/** Look up an autocomplete handler by command name. */
+export function getAutocompleteHandler(
+  name: string,
+): ((interaction: AutocompleteInteraction) => Promise<void>) | undefined {
+  return COMMANDS.find((command) => command.definition.name === name)?.autocomplete;
 }

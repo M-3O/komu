@@ -3,7 +3,7 @@ import type { Client, Message } from "discord.js";
 
 import { handleMessageActivity } from "@/lib/xp/message-xp";
 import { prisma } from "@/lib/db";
-import { applyRoleRulesForMember } from "@/lib/roles/apply-rules";
+import { tryApplyProgression } from "@/bot/services/progression";
 import { buildLevelUpEmbed } from "./level-up-message";
 import { createLogger } from "@/lib/logger";
 
@@ -46,9 +46,10 @@ async function onMessage(message: Message, client: Client) {
 
     if (!result.recorded) return;
 
-    // Role rules are checked on every qualifying message, not only on a level
-    // change: a membership-age rule can become satisfied without a level up.
-    await checkRoleRules(message);
+    // Roles and rewards are checked on every qualifying message, not only on a
+    // level change: a membership-age rule or a message-count reward can become
+    // satisfied without a level up.
+    await checkProgression(message);
 
     if (!result.xp?.leveledUp) {
       if (result.denial) {
@@ -73,32 +74,24 @@ async function onMessage(message: Message, client: Client) {
 }
 
 /**
- * Apply any role rules the member now qualifies for.
+ * Apply any roles or rewards the member now qualifies for.
  *
- * Failures are already reported by the role service, so this only guards
- * against the surrounding database work throwing.
+ * Failures inside the services are already reported, so this only guards
+ * against the guild lookup throwing.
  */
-async function checkRoleRules(message: Message) {
+async function checkProgression(message: Message) {
   const discordMember = message.member;
 
   if (!discordMember) return;
 
-  try {
-    const guild = await prisma.guild.findFirst({
-      where: { discordId: message.guildId ?? "" },
-      select: { id: true },
-    });
+  const guild = await prisma.guild.findFirst({
+    where: { discordId: message.guildId ?? "" },
+    select: { id: true },
+  });
 
-    if (!guild) return;
+  if (!guild) return;
 
-    await applyRoleRulesForMember(discordMember, guild.id);
-  } catch (error) {
-    log.error("Role rule check failed", {
-      guildId: message.guildId,
-      userId: message.author.id,
-      reason: error instanceof Error ? error.message : "unknown",
-    });
-  }
+  await tryApplyProgression(discordMember, guild.id);
 }
 
 /** Post the level-up message in the channel where it happened. */
