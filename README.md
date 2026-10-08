@@ -208,6 +208,38 @@ Note: modules shared between the Next.js app and the standalone bot process
 must not use `import "server-only"`. It throws outside a Next.js server
 bundle, which would stop the bot from starting.
 
+## Automatic roles
+
+Rules of the form "when a member reaches X, give them @Role" are configured
+on `/dashboard/roles`. Roles come from Discord, so you pick from real
+options.
+
+Thresholds are evaluated in `lib/roles/evaluate-rules.ts`, pure functions with
+23 tests covering every metric and the no-repeat requirement.
+
+**Idempotency** uses the member's *live* Discord role list, not a cached
+database copy. That is what stops the bot re-adding a role after a restart.
+
+**Available metrics**: Level reached, Total XP, Messages sent, Days in
+server. Watch time and stream attendance are deliberately not offered — the
+plan says to add a watch-time rule only when the required data exists, and
+V1 collects neither. The dashboard lists them as unavailable rather than
+offering a rule that could never fire.
+
+### When rules are checked
+
+On every qualifying message, and when someone joins. A member who joins and
+then goes silent will not pick up a "30 days in server" role until they next
+interact — V1 has no daily sweep, and adding one would mean scheduled work the
+plan rules out.
+
+### When a role cannot be assigned
+
+A role above the bot's highest role fails every time. The bot logs
+`Role assignment failed` with the rule name and a reason such as
+`ROLE_HIERARCHY`, rather than failing silently on every message. Move the
+bot's role above the role it needs to grant.
+
 ## Project layout
 
 ```text
@@ -227,6 +259,7 @@ src/
 │   ├── discord/    REST calls (channels, roles, posting)
 │   ├── levels/     Level maths
 │   ├── logger.ts   Logging
+│   ├── roles/      Role rule evaluation and assignment
 │   ├── streams/    Provider interface, live status, alert polling
 │   ├── twitch/     Twitch Helix client and normaliser
 │   └── xp/         XP awards, daily window, anti-abuse rules
@@ -332,8 +365,9 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 6 are done: project setup, database schema, Discord sign-in, the
-bot, the Twitch integration, stream alerts, and Discord activity with XP.
+Phases 0 to 7 are done: project setup, database schema, Discord sign-in, the
+bot, the Twitch integration, stream alerts, Discord activity with XP, and
+automatic roles.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -345,7 +379,8 @@ bot, the Twitch integration, stream alerts, and Discord activity with XP.
 | 4b    | Streaming integrations (YouTube, Kick)      | Next   |
 | 5     | Stream alerts                               | Done   |
 | 6     | Discord activity, XP and levels             | Done   |
-| 7     | Automatic roles                             | Next   |
+| 7     | Automatic roles                             | Done   |
+| 8     | Leaderboards                                | Next   |
 | 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.

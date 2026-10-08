@@ -20,6 +20,7 @@ import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { getBotToken, INTENTS, PARTIALS } from "./config";
 import { registerProcessHandlers, registerGuildEvents } from "./events/error-handlers";
+import { registerGuildMemberAdd } from "./events/guild-member-add";
 import { registerInteractionCreate } from "./events/interaction-create";
 import { registerMessageCreate } from "./events/message-create";
 import { registerReady } from "./events/ready";
@@ -38,6 +39,7 @@ async function main() {
   registerGuildEvents(client);
   registerInteractionCreate(client);
   registerMessageCreate(client);
+  registerGuildMemberAdd(client);
 
   // Command registration is handled by `npm run bot:register`, so a restart
   // never rewrites commands on Discord.

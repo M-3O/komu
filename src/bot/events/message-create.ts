@@ -2,6 +2,8 @@ import { ChannelType, Events } from "discord.js";
 import type { Client, Message } from "discord.js";
 
 import { handleMessageActivity } from "@/lib/xp/message-xp";
+import { prisma } from "@/lib/db";
+import { applyRoleRulesForMember } from "@/lib/roles/apply-rules";
 import { buildLevelUpEmbed } from "./level-up-message";
 import { createLogger } from "@/lib/logger";
 
@@ -44,6 +46,10 @@ async function onMessage(message: Message, client: Client) {
 
     if (!result.recorded) return;
 
+    // Role rules are checked on every qualifying message, not only on a level
+    // change: a membership-age rule can become satisfied without a level up.
+    await checkRoleRules(message);
+
     if (!result.xp?.leveledUp) {
       if (result.denial) {
         log.debug("Message did not earn XP", {
@@ -59,6 +65,35 @@ async function onMessage(message: Message, client: Client) {
     await announceLevelUp(message, client, result.xp.newLevel, result.xp.totalXp);
   } catch (error) {
     log.error("Message XP handling failed", {
+      guildId: message.guildId,
+      userId: message.author.id,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+  }
+}
+
+/**
+ * Apply any role rules the member now qualifies for.
+ *
+ * Failures are already reported by the role service, so this only guards
+ * against the surrounding database work throwing.
+ */
+async function checkRoleRules(message: Message) {
+  const discordMember = message.member;
+
+  if (!discordMember) return;
+
+  try {
+    const guild = await prisma.guild.findFirst({
+      where: { discordId: message.guildId ?? "" },
+      select: { id: true },
+    });
+
+    if (!guild) return;
+
+    await applyRoleRulesForMember(discordMember, guild.id);
+  } catch (error) {
+    log.error("Role rule check failed", {
       guildId: message.guildId,
       userId: message.author.id,
       reason: error instanceof Error ? error.message : "unknown",
