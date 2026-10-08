@@ -22,6 +22,8 @@ export async function handleHelp(
         "**`/help`** - Show this message.",
         "**`/setup`** - Check that Komu is set up for this server.",
         "**`/ping`** - Confirm the bot is responsive.",
+        "**`/level`** - See your XP and level.",
+        "**`/profile`** - See a member's full activity.",
       ].join("\n"),
     )
     .setFooter({ text: "More commands arrive as features land." });

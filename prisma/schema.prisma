@@ -270,8 +270,15 @@ model GuildMember {
   /// Timestamp of the last XP-granting message, for the message cooldown.
   lastXpMessageAt DateTime?
   /// Rolling daily XP total, used for the daily cap.
-  xpToday           Int       @default(0)
-  xpTodayResetAt    DateTime?
+  xpToday        Int       @default(0)
+  xpTodayResetAt DateTime?
+
+  // --- Repeated message detection ------------------------------------------
+  /// Hash of the member's most recent message, and how many times in a row
+  /// they have sent that same text. Used to ignore "lol lol lol" spam for
+  /// XP without storing message content (PRD section 7.5).
+  lastMessageHash       String?
+  lastMessageRepeatCount Int @default(0)
 
   xpTransactions     XPTransaction[]
   memberXp           MemberXP?

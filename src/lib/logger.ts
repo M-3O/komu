@@ -12,11 +12,12 @@ export type LogScope =
   | "db"
   | "auth"
   | "stream"
-  | "discord";
+  | "discord"
+  | "xp";
 
 function write(
   scope: LogScope,
-  level: "info" | "warn" | "error",
+  level: "debug" | "info" | "warn" | "error",
   message: string,
   context?: Record<string, unknown>,
 ) {
@@ -34,6 +35,12 @@ function write(
     console.error(line);
   } else if (level === "warn") {
     console.warn(line);
+  } else if (level === "debug") {
+    // Expected-path detail: noise during normal operation, so it is off in
+    // production unless something is wrong.
+    if (process.env.NODE_ENV !== "production") {
+      console.log(line);
+    }
   } else {
     console.log(line);
   }
@@ -42,6 +49,8 @@ function write(
 /** Create a logger bound to an area of the app. */
 export function createLogger(scope: LogScope) {
   return {
+    debug: (message: string, context?: Record<string, unknown>) =>
+      write(scope, "debug", message, context),
     info: (message: string, context?: Record<string, unknown>) =>
       write(scope, "info", message, context),
     warn: (message: string, context?: Record<string, unknown>) =>

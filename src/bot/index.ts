@@ -21,6 +21,7 @@ import { createLogger } from "@/lib/logger";
 import { getBotToken, INTENTS, PARTIALS } from "./config";
 import { registerProcessHandlers, registerGuildEvents } from "./events/error-handlers";
 import { registerInteractionCreate } from "./events/interaction-create";
+import { registerMessageCreate } from "./events/message-create";
 import { registerReady } from "./events/ready";
 
 const log = createLogger("bot");
@@ -36,6 +37,7 @@ async function main() {
   registerReady(client);
   registerGuildEvents(client);
   registerInteractionCreate(client);
+  registerMessageCreate(client);
 
   // Command registration is handled by `npm run bot:register`, so a restart
   // never rewrites commands on Discord.

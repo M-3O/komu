@@ -164,6 +164,50 @@ is why the endpoint exists as an alternative, and why the interval is opt-in.
 - **Offline is tracked.** Sessions get an end time, which is what lets a
   later stream be recognised as new.
 
+## XP and levels
+
+Members earn XP for qualifying Discord messages. `/level` and `/profile`
+show progress.
+
+Every change goes through `lib/xp/award-xp.ts`, which writes three things
+together: a transaction row (the real history — never just a running total),
+the member's cached total and level, and a level-change result for the caller
+to announce.
+
+### Level curve
+
+`lib/levels/calculate-level.ts` uses a quadratic curve:
+`xpForLevel(N) = 100 * N * (N + 1) / 2`. Level 2 at 100 XP, level 10 at
+2,750, level 25 at 16,250. Raising `XP_CURVE_BASE` slows every level.
+
+### Abuse prevention
+
+Configured per server on the `guilds` table for now:
+
+| Setting                | Default | Purpose                              |
+| ---------------------- | ------- | ------------------------------------ |
+| `xpMessageAmount`      | 15      | XP per qualifying message            |
+| `xpMessageMinLength`   | 3       | Filters "lol" style spam             |
+| `xpMessageCooldownSecs`| 60      | Minimum gap between XP messages      |
+| `xpDailyCap`           | 1000    | Ceiling per member per day           |
+
+Repeated identical messages stop earning XP after two repeats. Detection uses
+a short hash of the last message, so Discord content is never stored.
+
+The daily cap resets lazily: `xpToday` is reset when it is read and found to
+be from an earlier day. That avoids a scheduled job, which V1 rules out.
+
+### Two copies of the same number
+
+`GuildMember.xp/level` and `MemberXP.totalXp/level` hold the same values.
+`GuildMember` is the fast-read copy that leaderboard queries use
+(PRD section 14); `MemberXP` carries level detail like `xpToNextLevel`.
+They are written in one transaction so they cannot drift.
+
+Note: modules shared between the Next.js app and the standalone bot process
+must not use `import "server-only"`. It throws outside a Next.js server
+bundle, which would stop the bot from starting.
+
 ## Project layout
 
 ```text
@@ -184,7 +228,8 @@ src/
 │   ├── levels/     Level maths
 │   ├── logger.ts   Logging
 │   ├── streams/    Provider interface, live status, alert polling
-│   └── twitch/     Twitch Helix client and normaliser
+│   ├── twitch/     Twitch Helix client and normaliser
+│   └── xp/         XP awards, daily window, anti-abuse rules
 ├── instrumentation.ts  Starts the optional in-process poller
 ├── bot/            Discord bot (its own process)
 │   ├── index.ts      Entry point
@@ -287,8 +332,8 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 5 are done: project setup, database schema, Discord sign-in, the
-bot, the Twitch integration, and stream alerts.
+Phases 0 to 6 are done: project setup, database schema, Discord sign-in, the
+bot, the Twitch integration, stream alerts, and Discord activity with XP.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -299,6 +344,8 @@ bot, the Twitch integration, and stream alerts.
 | 4     | Streaming integrations (Twitch 1st)         | Done   |
 | 4b    | Streaming integrations (YouTube, Kick)      | Next   |
 | 5     | Stream alerts                               | Done   |
+| 6     | Discord activity, XP and levels             | Done   |
+| 7     | Automatic roles                             | Next   |
 | 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
