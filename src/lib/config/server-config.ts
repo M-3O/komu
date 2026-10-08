@@ -15,6 +15,10 @@ import { z } from "zod";
 const schema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 
+  /// Signs the session cookie. Generate with:
+  ///   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
+
   DISCORD_CLIENT_ID: z.string().min(1),
   DISCORD_CLIENT_SECRET: z.string().min(1),
   DISCORD_BOT_TOKEN: z.string().min(1),
@@ -60,12 +64,24 @@ export function getServerConfig(): ServerConfig {
 }
 
 /**
+ * The session signing secret, or null when it is not configured.
+ *
+ * Read leniently rather than through `getServerConfig`, so a missing secret
+ * on a fresh checkout produces a helpful login screen instead of a crash on
+ * every request.
+ */
+export function getAuthSecret(): string | null {
+  const value = process.env.AUTH_SECRET;
+  return value && value.length > 0 ? value : null;
+}
+
+/**
  * The Discord OAuth redirect URI.
  *
  * Registered in the Discord developer portal as
- * `${NEXT_PUBLIC_APP_URL}/api/auth/callback`.
+ * `${NEXT_PUBLIC_APP_URL}/callback`.
  */
 export function getDiscordRedirectUri(): string {
   const { NEXT_PUBLIC_APP_URL } = getServerConfig();
-  return `${NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/api/auth/callback`;
+  return `${NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/callback`;
 }
