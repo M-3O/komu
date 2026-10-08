@@ -17,7 +17,10 @@ export interface NavSection {
 export const DASHBOARD_NAV: NavSection[] = [
   {
     title: "Overview",
-    items: [{ href: "/dashboard", label: "Overview", phase: 0 }],
+    items: [
+      { href: "/dashboard", label: "Overview", phase: 0 },
+      { href: "/dashboard/streams", label: "Channels", phase: 4 },
+    ],
   },
   {
     title: "Engagement",

@@ -1,8 +1,8 @@
 import "server-only";
 
+import { io } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { connection } from "next/server";
 
 import { getAuthSecret } from "@/lib/config/server-config";
 import {
@@ -77,11 +77,12 @@ export async function getSession(): Promise<SessionPayload | null> {
   const secret = getAuthSecret();
   if (!secret) return null;
 
-  // Marks this render as request-time. Expiry checking reads the clock, and
-  // Next.js treats `Date.now()` as unstable output during prerendering
-  // because it cannot be baked into a static shell. `connection()` opts this
-  // render out of prerendering so the read is allowed.
-  await connection();
+  // Expiry checking reads the clock. Next.js treats `Date.now()` during
+  // prerendering as unstable output that cannot be baked into a static
+  // shell, so the read is declared as an IO operation first. `io()` is the
+  // documented choice under Cache Components: it suspends during
+  // prerendering and resolves during a request.
+  await io();
 
   const store = await cookies();
   const token = store.get(SESSION_COOKIE_NAME)?.value;

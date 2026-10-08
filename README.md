@@ -65,6 +65,51 @@ The dashboard is at <http://localhost:3000/dashboard>.
 | `npm run db:studio`   | Browse the database                         |
 | `npm run db:reset`    | Drop, re-migrate and re-seed                |
 
+## Streaming integrations
+
+Provider APIs are isolated behind one interface, so nothing outside
+`src/lib/twitch` (and later `src/lib/youtube` and `src/lib/kick`) needs to
+know a Twitch response shape. Callers get a `StreamInfo`:
+
+```text
+StreamInfo
+├── provider, creatorId, creatorUsername, providerStreamId
+├── title, game, thumbnail, viewerCount
+└── url, startedAt
+```
+
+Reaching a provider goes through `lib/streams`:
+
+```ts
+import { getLiveStatuses } from "@/lib/streams";
+
+const channels = await getLiveStatuses(guildId);
+```
+
+`getLiveStatuses` checks every connected channel and reports failures per
+channel, so one provider being unreachable does not hide the others. A
+channel with `error` set has an unknown status, which is deliberately
+distinct from a channel that is simply offline.
+
+Live status is fetched on `/dashboard/streams` rather than the overview,
+because every check is an external API call and the overview should stay
+cheap.
+
+### Twitch setup
+
+Create an application at <https://dev.twitch.tv/console/apps> and set
+`TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`.
+
+Komu uses an **app access token**, not a user token. Reading whether a
+channel is live needs no user authorisation, so the creator never has to
+grant Komu access to their account and no refresh-token handling is needed.
+
+Channels are connected by typing a Twitch login or channel id on
+`/dashboard/streams`. The identifier is resolved through Twitch before
+anything is stored, so Komu saves Twitch's own ids and display name rather
+than whatever was typed. YouTube and Kick are listed in the schema but not
+yet implemented; asking for one returns "not supported yet".
+
 ## Project layout
 
 ```text
@@ -82,7 +127,9 @@ src/
 │   ├── db.ts       Shared Prisma client
 │   ├── guilds/     Discord server access
 │   ├── levels/     Level maths
-│   └── logger.ts   Logging
+│   ├── logger.ts   Logging
+│   ├── streams/    Provider-neutral interface and live status
+│   └── twitch/     Twitch Helix client and normaliser
 ├── bot/            Discord bot (its own process)
 │   ├── index.ts      Entry point
 │   ├── config.ts     Intents and credentials
@@ -184,8 +231,8 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 3 are done: project setup, database schema, Discord sign-in, and
-the bot.
+Phases 0 to 4 are done: project setup, database schema, Discord sign-in, the
+bot, and the Twitch integration.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -193,7 +240,8 @@ the bot.
 | 1     | Database foundation                         | Done   |
 | 2     | Discord OAuth                               | Done   |
 | 3     | Discord bot foundation                      | Done   |
-| 4     | Streaming account integrations (Twitch 1st) | Next   |
+| 4     | Streaming integrations (Twitch 1st)         | Done   |
+| 4b    | Streaming integrations (YouTube, Kick)      | Next   |
 | 5     | Stream alerts                               | Todo   |
 | 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
 
@@ -206,7 +254,9 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 - Bot tokens, OAuth secrets and provider tokens are only read in server code.
   Nothing secret is sent to the browser.
 - The session is an HMAC-signed cookie (`AUTH_SECRET`), httpOnly and
-  sameSite=lax, valid for seven days.
+  sameSite=lax, valid for seven days. Expiry is checked with `io()` rather
+  than `connection()`: under Cache Components, `io()` is the documented way
+  to keep a clock read out of the static shell.
 - The OAuth `state` value is compared in constant time, so another site
   cannot feed the callback a forged authorization code.
 - Signing out is POST-only, so a third-party page cannot force a sign-out.
