@@ -83,8 +83,14 @@ src/
 │   ├── guilds/     Discord server access
 │   ├── levels/     Level maths
 │   └── logger.ts   Logging
-├── proxy.ts        Sends signed-out visitors to the login page
-└── bot/            Discord.js client (coming in Phase 3)
+├── bot/            Discord bot (its own process)
+│   ├── index.ts      Entry point
+│   ├── config.ts     Intents and credentials
+│   ├── commands/     Slash command definitions and handlers
+│   ├── events/       Gateway event handlers
+│   ├── services/     Role, moderation and message helpers
+│   └── register-commands.ts
+└── proxy.ts        Sends signed-out visitors to the login page
 prisma/
 ├── schema.prisma   Data model
 ├── seed.ts         Test data
@@ -104,6 +110,48 @@ workers or caches in V1.
 
 Streaming providers are isolated behind a shared interface so the rest of the
 application never sees a provider-specific response shape.
+
+## Running the bot
+
+The Discord bot runs as its own process, separate from the web app:
+
+```bash
+npm run bot
+```
+
+This is not a background worker in the sense the plan rules out. There is no
+queue and no job system; a gateway connection simply has to stay open for as
+long as the bot is online.
+
+Register the slash commands once:
+
+```bash
+npm run bot:register -- --guild   # one server, appears immediately
+npm run bot:register              # globally, can take up to an hour
+```
+
+Use `--guild` while developing. Discord caches global commands aggressively, so
+a global change may not show up for a while.
+
+### Privileged intents
+
+Three intents must be enabled in the developer portal under
+**Bot → Privileged Gateway Intents**, or the corresponding events never
+arrive and the bot looks online but does nothing:
+
+- **Server Members Intent** — join and leave events
+- **Message Content Intent** — reads message text, needed for XP
+- **Message Intent** — message events
+
+### Permissions
+
+`/setup` reports what is missing. It checks:
+
+View Channel, Send Messages, Embed Links, Read Message History, Manage Roles,
+Moderate Members, Ban Members, Manage Messages.
+
+Place the bot's role below any role it must be able to assign, or every role
+assignment fails with a hierarchy error.
 
 ## Signing in
 
@@ -136,15 +184,16 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 2 are done: project setup, database schema, and Discord sign-in.
+Phases 0 to 3 are done: project setup, database schema, Discord sign-in, and
+the bot.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
 | 0     | Project setup                               | Done   |
 | 1     | Database foundation                         | Done   |
 | 2     | Discord OAuth                               | Done   |
-| 3     | Discord bot foundation                      | Next   |
-| 4     | Streaming account integrations (Twitch 1st) | Todo   |
+| 3     | Discord bot foundation                      | Done   |
+| 4     | Streaming account integrations (Twitch 1st) | Next   |
 | 5     | Stream alerts                               | Todo   |
 | 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
 
@@ -171,16 +220,11 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 
 ## Bot permissions
 
-Komu needs these Discord permissions in the server it manages:
-
-- View Channels
-- Send Messages
-- Embed Links
-- Read Message History
-- Manage Roles (to award level and reward roles)
-- Moderate Members (to time out and kick)
-- Ban Members
-- Manage Messages (to delete filtered or spam messages)
+See **Running the bot** above. Run `/setup` in your server to check what is
+missing — it reports on both intents' worth of permissions and whether the bot
+is in the server the dashboard expects.
 
 Grant the role Komu uses to manage other roles below the highest role it needs,
-so it cannot escalate privileges.
+so it cannot escalate privileges. A role above the bot's highest role can never
+be assigned, and Komu reports that as a hierarchy error rather than failing
+silently.

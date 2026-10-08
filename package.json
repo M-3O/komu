@@ -15,7 +15,9 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bot": "tsx src/bot/index.ts",
+    "bot:register": "tsx src/bot/register-commands.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
