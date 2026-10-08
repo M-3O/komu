@@ -1,5 +1,15 @@
 import type { GuildMember } from "discord.js";
 
+import {
+  grantChallengeCompletions,
+  type GrantCompletionsResult,
+} from "@/lib/challenges/grant-completion";
+import {
+  updateChallengeProgress,
+  type ChallengeActivity,
+  type UpdateChallengesResult,
+} from "@/lib/challenges/record-progress";
+import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { applyRoleRulesForMember, type ApplyRolesResult } from "@/lib/roles/apply-rules";
 import { grantEligibleRewards, type GrantRewardsResult } from "@/lib/rewards/grant";
@@ -7,13 +17,13 @@ import { grantEligibleRewards, type GrantRewardsResult } from "@/lib/rewards/gra
 /**
  * One place that reacts to a member's progress changing.
  *
- * Roles and rewards are both "condition -> effect" over the same numbers, so
- * they are checked together after the same events: a message, a stream
- * attendance reaction, and a member joining. Having one entry point is what
- * keeps a new event from wiring up one system and forgetting the other.
+ * Roles, rewards and challenges are all "condition -> effect" over the same
+ * numbers, so they are checked together after the same events: a message, a
+ * stream attendance reaction, and a member joining. Having one entry point is
+ * what keeps a new event from wiring up one system and forgetting the others.
  *
- * Neither call throws: a role above the bot's highest role is a configuration
- * problem to report, not a reason to drop a member's other rewards.
+ * Nothing here throws. A role above the bot's highest role is a configuration
+ * problem to report, not a reason to drop a member's XP or their other rewards.
  */
 
 const log = createLogger("bot");
@@ -21,6 +31,7 @@ const log = createLogger("bot");
 export interface ProgressionResult {
   roles: ApplyRolesResult;
   rewards: GrantRewardsResult;
+  challenges: UpdateChallengesResult & { payouts: GrantCompletionsResult };
 }
 
 export interface ProgressionOptions {
@@ -28,35 +39,71 @@ export interface ProgressionOptions {
   manualByDiscordId?: string;
   /** Check only this reward, used by the `/reward` command. */
   onlyRewardId?: string;
+  /**
+   * What the member just did.
+   *
+   * Required, because challenge progress is counted per activity. Without it a
+   * message and a stream attendance would be indistinguishable, and a
+   * challenge would be unable to tell which counter to advance.
+   */
+  activity: ChallengeActivity;
 }
 
-/** Apply role rules and rewards for a member. */
+/** Apply roles, rewards and challenges for a member. */
 export async function applyProgressionForMember(
   member: GuildMember,
   guildDbId: string,
-  options: ProgressionOptions = {},
+  options: ProgressionOptions,
 ): Promise<ProgressionResult> {
+  const dbMember = await prisma.guildMember.findFirst({
+    where: { guildId: guildDbId, discordId: member.id },
+    select: { id: true, level: true },
+  });
+
+  // Nothing is tracked for this member yet, so nothing can be measured.
+  if (!dbMember) {
+    const empty = { updated: [], completed: [], expired: 0, skippedNoRequirements: 0, unrelated: 0 };
+    return {
+      roles: { assigned: [], failed: [], alreadyHeld: 0, unsatisfied: 0 },
+      rewards: { granted: [], failed: [], skipped: 0 },
+      challenges: { ...empty, payouts: { granted: [], partial: [], alreadyGiven: 0 } },
+    };
+  }
+
   const roles = await applyRoleRulesForMember(member, guildDbId);
 
   const rewards = await grantEligibleRewards({
     member,
     guildId: guildDbId,
-    ...options,
+    ...(options.manualByDiscordId ? { manualByDiscordId: options.manualByDiscordId } : {}),
+    ...(options.onlyRewardId ? { onlyRewardId: options.onlyRewardId } : {}),
   });
 
-  return { roles, rewards };
+  // Challenges run after rewards: a reward's XP can push a member over a level
+  // threshold, and the challenge should see the level it just produced rather
+  // than the one from before.
+  const challengeProgress = await updateChallengeProgress({
+    guildId: guildDbId,
+    memberId: dbMember.id,
+    level: dbMember.level,
+    activity: options.activity,
+  });
+
+  const payouts = await grantChallengeCompletions({ member, guildId: guildDbId });
+
+  return { roles, rewards, challenges: { ...challengeProgress, payouts } };
 }
 
 /**
  * The same as `applyProgressionForMember`, but never throws.
  *
- * Event handlers call this so one failing subsystem cannot stop the other or
+ * Event handlers call this so one failing subsystem cannot stop the others or
  * bubble up into the gateway's error handler.
  */
 export async function tryApplyProgression(
   member: GuildMember,
   guildDbId: string,
-  options: ProgressionOptions = {},
+  options: ProgressionOptions,
 ): Promise<ProgressionResult | null> {
   try {
     return await applyProgressionForMember(member, guildDbId, options);

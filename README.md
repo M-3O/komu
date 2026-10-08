@@ -353,6 +353,84 @@ A moderator can re-grant a reward a member already has, but **cannot grant one
 they have not earned**. Without that limit the command would be an XP printer
 with extra steps.
 
+## Challenges
+
+A challenge is a structured, time-bounded goal with one or more
+requirements. All of them must be met.
+
+```text
+Attend 3 streams
++ Send 20 messages
++ Reach level 5
+        =
+Challenge complete
+        =
+250 XP and the @Challenge Winner role
+```
+
+### Progress counts from the start of the challenge
+
+This is what separates a challenge from a reward. A reward checks a member's
+lifetime total; a challenge counts what they did **during** the challenge. So
+progress lives on `ChallengeProgress` in its own counters, not derived from
+`GuildMember.messageCount`.
+
+Creating a challenge today does not credit a member with last month's
+messages. Verified against the live database: a member with 500 messages and
+20 stream attendances started a fresh challenge at zero.
+
+Progress rows are created on a member's first relevant activity, not when the
+challenge is created, so setting one up does not write a row for every member
+in the server.
+
+### Requirements
+
+`Attend N streams`, `Send N messages`, `Reach level N`.
+
+Hours watched is not offered, for the same reason it is not offered as a role
+rule or a reward condition: nothing collects watch time, so the challenge
+could never be completed.
+
+A **level** requirement is read from the member rather than counted, because a
+level never decreases. That means level challenges are re-checked on every
+activity — levels rise from messages and attendance, so checking only on join
+would leave them uncompletable for anyone who levelled up by messaging.
+
+A challenge with **no requirements** is never complete and gets no progress
+rows. Completing it would be indistinguishable from being paid for nothing.
+
+### When progress is checked
+
+A qualifying message, a recorded stream attendance, and a member joining. That
+is the same three events that drive roles and rewards, all through
+`bot/services/progression.ts`.
+
+An activity that no requirement of a challenge asks for writes nothing for
+that challenge. On a busy server most messages concern no challenge at all,
+and those skip the database entirely.
+
+### Expiry
+
+Progress stops being recorded once `endsAt` has passed. Rows are left alone
+rather than deleted, so a member can still see how far they got. No scheduled
+job is needed: expiry is checked when activity arrives.
+
+### Payout
+
+A member who completes a challenge gets `xpReward` and, if configured, a
+Discord role. The payout bypasses the daily XP cap: finishing a challenge is a
+deliberate reward, not something earned by grinding messages.
+
+`rewardGivenAt` makes it exactly once. It is set even when the role could not
+be assigned, so a role above the bot's highest role does not retry — and
+inflate XP — on every subsequent message.
+
+### Member view
+
+`/challenge` in Discord shows the caller's progress on the current
+challenges. Challenges have no announcement channel configured, so this is
+where a member finds out how they are doing rather than waiting to be told.
+
 ## Verifying changes
 
 ```bash
@@ -380,6 +458,7 @@ src/
 ├── lib/            Business logic and integrations
 │   ├── attendance/ Stream attendance from alert reactions
 │   ├── auth/       Sessions, Discord OAuth, permission checks
+│   ├── challenges/ Challenge progress, completion and payouts
 │   ├── config/     Environment validation
 │   ├── dashboard/  Dashboard queries and navigation
 │   ├── db.ts       Shared Prisma client
@@ -401,7 +480,7 @@ src/
 │   ├── commands/     Slash command definitions and handlers
 │   ├── events/       Gateway event handlers
 │   ├── permissions.ts  Live Discord permission checks
-│   ├── services/     Progression, moderation and message helpers
+│   ├── services/     Progression (roles, rewards, challenges), moderation
 │   └── register-commands.ts
 └── proxy.ts        Sends signed-out visitors to the login page
 prisma/
@@ -456,6 +535,7 @@ a global change may not show up for a while.
 | `/level` | Shows your own XP and level. |
 | `/profile` | Shows your level, rank and streaks. |
 | `/leaderboard` | Top members by XP or activity. |
+| `/challenge` | Your progress on the current challenges. |
 | `/reward` | Grant a reward to a member by hand. Needs `Administrator`. |
 
 ### Privileged intents
@@ -509,7 +589,7 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 9 are done, plus the stream-attendance mechanism that several
+Phases 0 to 10 are done, plus the stream-attendance mechanism that several
 later features depend on.
 
 | Phase | Scope                                       | Status |
@@ -526,8 +606,8 @@ later features depend on.
 | 8     | Leaderboards                                | Done   |
 | -     | Stream attendance capture                   | Done   |
 | 9     | Rewards                                     | Done   |
-| 10    | Challenges                                  | Next   |
-| 11    | Achievements                                | Todo   |
+| 10    | Challenges                                  | Done   |
+| 11    | Achievements                                | Next   |
 | 12    | Moderation                                  | Todo   |
 | 13    | Analytics                                   | Todo   |
 
@@ -542,6 +622,9 @@ later features depend on.
   interact.
 - **`/dashboard/xp`** is listed in the sidebar but not built. XP settings are
   editable in the database only.
+- **Challenges have no announcement channel.** A completion is logged and
+  appears on the dashboard and in `/challenge`, but nothing is posted to
+  Discord automatically. `Challenge` has no channel column to post to.
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 

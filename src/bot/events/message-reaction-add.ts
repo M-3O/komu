@@ -82,10 +82,12 @@ async function onReactionAdd(
       });
     }
 
-    // Attendance can satisfy an attendance role rule or reward, so both are
-    // re-checked here as well as after messages.
+    // Attendance can satisfy an attendance role rule, reward or challenge, so all
+    // three are re-checked here as well as after messages.
     if (member) {
-      await tryApplyProgression(member, guild.id);
+      await tryApplyProgression(member, guild.id, {
+        activity: { kind: "STREAM_ATTENDANCE" },
+      });
     }
   } catch (error) {
     log.error("Could not record attendance", {

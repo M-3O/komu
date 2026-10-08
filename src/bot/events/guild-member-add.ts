@@ -52,7 +52,9 @@ async function onMemberJoin(member: GuildMember) {
       },
     });
 
-    await tryApplyProgression(member, guild.id);
+    // A join advances no counter, but it is the moment a level requirement that
+    // is already met can first be noticed.
+    await tryApplyProgression(member, guild.id, { activity: { kind: "JOINED" } });
   } catch (error) {
     log.error("Could not handle a new member", {
       guildId: member.guild.id,

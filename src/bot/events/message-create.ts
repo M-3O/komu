@@ -91,7 +91,9 @@ async function checkProgression(message: Message) {
 
   if (!guild) return;
 
-  await tryApplyProgression(discordMember, guild.id);
+  // The message already earned XP, so it counts towards a message-count
+  // challenge. A message that did not earn XP never reaches this handler.
+  await tryApplyProgression(discordMember, guild.id, { activity: { kind: "MESSAGE" } });
 }
 
 /** Post the level-up message in the channel where it happened. */
