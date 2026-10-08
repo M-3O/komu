@@ -268,6 +268,36 @@ messages never become a transaction, so this is lower than the true message
 count. The dashboard says so rather than letting the number imply otherwise.
 All-time activity uses the real total, which is why the two differ.
 
+## Stream attendance
+
+Discord exposes no watch telemetry, so attendance cannot be observed.
+**A member reacting to the live alert is the signal V1 uses.**
+
+```text
+Creator goes live
+   ↓
+Alert posts to Discord (message id stored on the Stream row)
+   ↓
+A member reacts to that message
+   ↓
+Attendance recorded, 25 XP, role rules re-checked
+```
+
+This unblocks the features that depend on attendance: attendance rewards,
+challenges, achievements, and the stream-attendance role metric.
+
+**What a reaction actually proves:** someone was in the channel when the
+alert posted. It is engagement, not verified watch time. Watch time is
+tracked separately in minutes and is never populated by this mechanism, which
+is why the watch-time role metric and watch-time rewards stay unavailable.
+
+**Deduplication** uses a unique constraint on (streamId, memberId) with
+`skipDuplicates`, not a caught error. A busy server produces repeat reactions
+constantly, and the try/catch version logged a `prisma:error` for each one.
+
+Role rules are re-checked after attendance, so a "3 streams attended" role
+appears without waiting for the next message.
+
 ## Verifying changes
 
 ```bash
@@ -293,6 +323,7 @@ src/
 │   └── setup/      Discord server selection
 ├── components/     React components
 ├── lib/            Business logic and integrations
+│   ├── attendance/ Stream attendance from alert reactions
 │   ├── auth/       Sessions, Discord OAuth, permission checks
 │   ├── config/     Environment validation
 │   ├── dashboard/  Dashboard queries and navigation
@@ -408,9 +439,8 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 8 are done: project setup, database schema, Discord sign-in, the
-bot, the Twitch integration, stream alerts, Discord activity with XP,
-automatic roles, and leaderboards.
+Phases 0 to 8 are done, plus the stream-attendance mechanism that several
+later features depend on.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -424,6 +454,7 @@ automatic roles, and leaderboards.
 | 6     | Discord activity, XP and levels             | Done   |
 | 7     | Automatic roles                             | Done   |
 | 8     | Leaderboards                                | Done   |
+| -     | Stream attendance capture                   | Done   |
 | 9     | Rewards                                     | Next   |
 | 6+    | XP, levels, roles, leaderboards, rewards, challenges, achievements, moderation, analytics | Todo |
 

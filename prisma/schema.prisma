@@ -364,11 +364,18 @@ model Stream {
   /// same session.
   alertSentAt DateTime?
 
+  /// Discord id of the posted alert message. Reactions on this message are
+  /// how stream attendance is recorded, so it has to survive a restart
+  /// (PRD section 7.5).
+  alertMessageId String?
+
   attendance StreamAttendance[]
 
   @@unique([streamingAccountId, providerStreamId])
   @@index([guildId, startedAt])
   @@index([guildId, endedAt])
+  /// Looked up on every reaction to an alert message.
+  @@index([alertMessageId])
   @@map("streams")
 }
 

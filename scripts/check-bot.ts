@@ -17,6 +17,7 @@ import "../src/bot/events/guild-member-add";
 import "../src/bot/events/interaction-create";
 import "../src/bot/events/level-up-message";
 import "../src/bot/events/message-create";
+import "../src/bot/events/message-reaction-add";
 import "../src/bot/events/ready";
 
 const commandNames = COMMANDS.map((command) => command.definition.name);

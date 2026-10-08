@@ -23,6 +23,7 @@ import { registerProcessHandlers, registerGuildEvents } from "./events/error-han
 import { registerGuildMemberAdd } from "./events/guild-member-add";
 import { registerInteractionCreate } from "./events/interaction-create";
 import { registerMessageCreate } from "./events/message-create";
+import { registerMessageReactionAdd } from "./events/message-reaction-add";
 import { registerReady } from "./events/ready";
 
 const log = createLogger("bot");
@@ -40,6 +41,7 @@ async function main() {
   registerInteractionCreate(client);
   registerMessageCreate(client);
   registerGuildMemberAdd(client);
+  registerMessageReactionAdd(client);
 
   // Command registration is handled by `npm run bot:register`, so a restart
   // never rewrites commands on Discord.

@@ -236,7 +236,7 @@ export interface SendMessageInput {
 export async function sendChannelMessage(
   channelId: string,
   input: SendMessageInput,
-): Promise<DiscordWriteResult> {
+): Promise<DiscordWriteResult & { messageId?: string }> {
   const result = await discordRequest<{ id: string }>(
     "POST",
     `/channels/${channelId}/messages`,
@@ -245,5 +245,7 @@ export async function sendChannelMessage(
 
   if (!result.ok) return result.result;
 
-  return OK;
+  // The id is returned so callers can identify the message later, which is
+  // how reactions on a live alert are matched back to a stream session.
+  return { ...OK, messageId: result.data.id };
 }

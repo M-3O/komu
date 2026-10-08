@@ -214,7 +214,12 @@ async function deliverAlert(
   // send means a failure is retried rather than lost.
   await prisma.stream.update({
     where: { id: streamRowId },
-    data: { alertSentAt: new Date() },
+    data: {
+      alertSentAt: new Date(),
+      // Stored so a reaction on the alert can be matched back to this
+      // session, which is how attendance is counted.
+      alertMessageId: result.messageId ?? null,
+    },
   });
 
   log.info("Live alert sent", {
