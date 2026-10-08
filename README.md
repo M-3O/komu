@@ -567,6 +567,62 @@ ban someone the bot cannot touch, so the second check turns a confusing API
 error into a sentence a moderator can act on. The message names the likely
 cause: bot role below the target's, or a missing permission.
 
+## Analytics
+
+Plain Prisma aggregates over data the application already stores. No
+warehouse, no event bus, no analytics cache — the plan rules those out for V1,
+and for one server's worth of data they would be infrastructure to maintain
+rather than speed worth having.
+
+### Cards and the chart read the same rows
+
+The totals and the daily buckets come from one query of `XPTransaction`, so a
+card and its graph cannot disagree. Verified live: both reported 6 messages and
+80 XP.
+
+### Only message XP counts as activity
+
+A `REWARD`, `ACHIEVEMENT` or `CHALLENGE` transaction is a payout, not activity.
+Counting them would report a quiet day as a busy one. A 500 XP reward payout on
+the same day as 80 XP of messages reads as 80, not 580.
+
+The caveat is printed on the page: messages counted here are the ones that
+earned XP, so the number is lower than every message sent. Same honesty as the
+leaderboards.
+
+### Days are whole UTC days
+
+`rangeStart` snaps to UTC midnight. A window ending at midday would otherwise
+span one more calendar date than its name suggests — "last 7 days" would draw
+eight bars — and a partial first day would put the cards and the chart on
+different boundaries.
+
+UTC rather than local time because otherwise an event lands in a different
+bucket depending on where the server runs.
+
+### Quiet days are drawn, not skipped
+
+`emptyBuckets` fills the whole range with zeroed days. Without that a chart
+draws a straight line from Monday to Friday over a silent weekend, which reads
+as steady activity rather than two quiet days.
+
+An unrecognised range falls back to 30 days. It does not produce an invalid
+date, because that would return no bars at all — and a chart with no bars reads
+as "no activity" rather than "bad request".
+
+### The chart is hand-drawn SVG
+
+No charting library. The shape needed is a bar per day, and a dependency would
+bring hundreds of kilobytes and an API to learn for arithmetic that fits in one
+function. Bars scale against the largest day in the range, so a quiet week is
+not a flat line at the bottom.
+
+### Watch time is listed, not omitted
+
+The PRD asks for it and there is no data source, so the page shows it under
+"Not available yet" with the reason. A card reading zero would imply it was
+measured and found to be zero.
+
 ## Verifying changes
 
 ```bash
@@ -594,6 +650,7 @@ src/
 ├── lib/            Business logic and integrations
 │   ├── attendance/ Stream attendance from alert reactions
 │   ├── achievements/ Achievement conditions and unlocking
+│   ├── analytics/  Aggregates, date ranges and daily bucketing
 │   ├── auth/       Sessions, Discord OAuth, permission checks
 │   ├── challenges/ Challenge progress, completion and payouts
 │   ├── config/     Environment validation
@@ -733,8 +790,8 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 12 are done, plus the stream-attendance mechanism that several
-later features depend on.
+Phases 0 to 13 are done. That is every numbered phase in the implementation
+plan.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -753,7 +810,7 @@ later features depend on.
 | 10    | Challenges                                  | Done   |
 | 11    | Achievements                                | Done   |
 | 12    | Moderation                                  | Done   |
-| 13    | Analytics                                   | Next   |
+| 13    | Analytics                                   | Done   |
 | 12    | Moderation                                  | Todo   |
 | 13    | Analytics                                   | Todo   |
 
