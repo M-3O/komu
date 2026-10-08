@@ -2,6 +2,7 @@ import {
   DiscordAPIError,
   GuildMember,
   PermissionFlagsBits,
+  type Message,
   type SendableChannels,
 } from "discord.js";
 
@@ -258,6 +259,20 @@ export function botCanModerate(
   const targetRole = target.roles.highest;
 
   return botRole.id !== botMember.guild.id && botRole.position > targetRole.position;
+}
+
+/** Delete a message, tolerating one the bot can no longer see. */
+export async function deleteMessage(message: Message): Promise<DiscordActionResult> {
+  try {
+    await message.delete();
+    return OK;
+  } catch (error) {
+    const result = describeError(error);
+    // Discord refuses to delete a message older than two weeks, and a missing
+    // Manage Messages shows up here too. Neither is worth retrying.
+    logFailure("deleteMessage", message.guildId ?? "", message.author.id, result);
+    return result;
+  }
 }
 
 /** Send a plain message to a channel, reporting failure rather than throwing. */

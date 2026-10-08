@@ -9,6 +9,18 @@ import { handleChallenge, challengeCommand } from "./challenge";
 import { handleHelp, helpCommand } from "./help";
 import { handleLeaderboard, leaderboardCommand } from "./leaderboard";
 import { handleLevel, levelCommand } from "./level";
+import {
+  banCommand,
+  handleBan,
+  handleKick,
+  handleTimeout,
+  handleWarn,
+  handleWarnings,
+  kickCommand,
+  timeoutCommand,
+  warningsCommand,
+  warnCommand,
+} from "./moderate";
 import { handlePing, pingCommand } from "./ping";
 import { handleProfile, profileCommand } from "./profile";
 import { handleReward, handleRewardAutocomplete, rewardCommand } from "./reward";
@@ -46,6 +58,11 @@ export const COMMANDS: BotCommand[] = [
     handle: handleReward,
     autocomplete: handleRewardAutocomplete,
   },
+  { definition: warnCommand, handle: handleWarn },
+  { definition: warningsCommand, handle: handleWarnings },
+  { definition: timeoutCommand, handle: handleTimeout },
+  { definition: kickCommand, handle: handleKick },
+  { definition: banCommand, handle: handleBan },
 ];
 
 /** Look up a handler by command name. */

@@ -3,6 +3,7 @@ import type { Client, GuildMember } from "discord.js";
 
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
+import { moderateJoin } from "@/lib/moderation/moderate-join";
 import { tryApplyProgression } from "@/bot/services/progression";
 
 const log = createLogger("bot");
@@ -51,6 +52,10 @@ async function onMemberJoin(member: GuildMember) {
         joinedAt: member.joinedAt ?? new Date(),
       },
     });
+
+    // Anti-raid runs before anything is credited to the new member. A raid
+    // should not create rows, XP or challenges for the accounts behind it.
+    await moderateJoin(member, guild.id);
 
     // A join advances no counter, but it is the moment a level requirement that
     // is already met can first be noticed.

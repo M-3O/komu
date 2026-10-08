@@ -479,6 +479,94 @@ find. Unlocking still works normally — hiding affects display only.
 each member is. Unlocked achievements also appear on `/profile`, which already
 did so from Phase 6.
 
+## Moderation
+
+Three automatic rules and five manual commands, all configured from the
+dashboard and enforced by the bot.
+
+### Word filter
+
+Case-insensitive, **whole-word** matching. Whole-word matters: blocking "ass"
+must not also delete "class", "assignment" and "pass", because a filter that
+catches innocent words is how members leave.
+
+```text
+Blocked: badword, spam-link, free nitro
+
+"this is a badword"        -> matched
+"I am in a classroom"      -> clean (contains "ass", but not as a word)
+"nothing here"             -> clean
+```
+
+Regex characters in a blocked word are escaped, so `c++` or `a.b` are matched
+literally instead of throwing on every message.
+
+**Boundaries are ASCII, not Unicode.** That is a deliberate tradeoff. Unicode
+letter boundaries would be more precise, but they mean a blocked word followed
+by any CJK character does not match — so the entire filter can be evaded by
+typing one extra character, and the creator has no way to see why their filter
+stopped working. Silent evasion is worse than the rare false positive. ASCII
+still protects the case that matters.
+
+An empty entry in the word list is ignored, because a trailing comma in the
+form is the easy way to produce one, and an empty entry would otherwise match
+every message.
+
+### Spam protection
+
+N messages inside a window. The window is at least 60 seconds, because a
+shorter one times out ordinary conversation.
+
+### Anti-raid
+
+N joins inside a window, after which the accounts that joined in that window
+are **timed out**. Nothing is banned automatically: a join spike has innocent
+explanations, and auto-banning is how a protection tool becomes the incident.
+The server owner is never timed out — that would lock the creator out during
+the incident they are trying to handle.
+
+### Rate and spike counting is in memory
+
+Timestamps live in a `Map` in the bot process, not in the database. A flood is
+a burst; writing every message timestamp to Postgres to notice one would cost
+more than it is worth.
+
+The trade-off: the window **resets when the bot restarts**, which means a brief
+lapse right after a deploy rather than a way past the filter on purpose. Keys
+are pruned periodically so a spammy account cannot grow the map without bound.
+
+### Moderation runs before XP
+
+A message the word filter deleted does not earn XP. Otherwise a spammer is
+rewarded for exactly the behaviour the filter exists to stop.
+
+### Warnings
+
+Warnings are `ModerationActionRecord` rows of type `MANUAL_WARN`, as the schema
+documents, rather than a separate table.
+
+- `/warnings` lists them, newest first, marking cleared ones
+- `--clear` stamps `warningClearedAt` rather than deleting, so the count drops
+  but the history survives
+
+### The audit trail outlives its rules
+
+Deleting a moderation rule nulls `ruleId` on the records it caused
+(`onDelete: SetNull`) instead of cascading them away. A moderation history that
+disappears when its rule is tidied up is useless for asking "what happened
+last week".
+
+### Manual commands
+
+`/warn`, `/warnings`, `/timeout`, `/kick` and `/ban`. All need `Administrator`,
+read from the caller's live Discord permissions.
+
+Each checks twice before acting: the caller needs `Administrator`, **and** the
+bot must be able to moderate the target. Discord happily accepts a request to
+ban someone the bot cannot touch, so the second check turns a confusing API
+error into a sentence a moderator can act on. The message names the likely
+cause: bot role below the target's, or a missing permission.
+
 ## Verifying changes
 
 ```bash
@@ -516,6 +604,7 @@ src/
 │   ├── leaderboards/ Periods and ranking queries
 │   ├── levels/     Level maths
 │   ├── logger.ts   Logging
+│   ├── moderation/ Word filter, rate limits, raids, warnings
 │   ├── progression/ Shared metric maths used by roles and rewards
 │   ├── rewards/    Reward evaluation, granting and history
 │   ├── roles/      Role rule evaluation and assignment
@@ -587,6 +676,11 @@ a global change may not show up for a while.
 | `/challenge` | Your progress on the current challenges. |
 | `/achievements` | Your achievements and what is still locked. |
 | `/reward` | Grant a reward to a member by hand. Needs `Administrator`. |
+| `/warn` | Warn a member. Needs `Administrator`. |
+| `/warnings` | Show or clear a member's warnings. Needs `Administrator`. |
+| `/timeout` | Time a member out. Needs `Administrator`. |
+| `/kick` | Remove a member. Needs `Administrator`. |
+| `/ban` | Ban a member. Needs `Administrator`. |
 
 ### Privileged intents
 
@@ -639,7 +733,7 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 11 are done, plus the stream-attendance mechanism that several
+Phases 0 to 12 are done, plus the stream-attendance mechanism that several
 later features depend on.
 
 | Phase | Scope                                       | Status |
@@ -658,7 +752,8 @@ later features depend on.
 | 9     | Rewards                                     | Done   |
 | 10    | Challenges                                  | Done   |
 | 11    | Achievements                                | Done   |
-| 12    | Moderation                                  | Next   |
+| 12    | Moderation                                  | Done   |
+| 13    | Analytics                                   | Next   |
 | 12    | Moderation                                  | Todo   |
 | 13    | Analytics                                   | Todo   |
 
@@ -676,6 +771,11 @@ later features depend on.
 - **Challenges have no announcement channel.** A completion is logged and
   appears on the dashboard and in `/challenge`, but nothing is posted to
   Discord automatically. `Challenge` has no channel column to post to.
+- **Rate and join-spike windows reset when the bot restarts.** They are counted
+  in memory rather than written to the database. A brief lapse after a deploy,
+  not a way past the filter.
+- **Moderation commands need `Administrator`.** A server that wants a separate
+  Moderator role cannot have one yet.
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 

@@ -3,6 +3,7 @@ import type { Client, Message } from "discord.js";
 
 import { handleMessageActivity } from "@/lib/xp/message-xp";
 import { prisma } from "@/lib/db";
+import { moderateMessage } from "@/lib/moderation/moderate-message";
 import { tryApplyProgression } from "@/bot/services/progression";
 import { buildLevelUpEmbed } from "./level-up-message";
 import { createLogger } from "@/lib/logger";
@@ -35,6 +36,28 @@ async function onMessage(message: Message, client: Client) {
   if (!message.content || message.content.trim().length === 0) return;
 
   try {
+    // Resolved once and shared. `guild.id` above is Discord's snowflake, which
+    // is not the id the rest of the application stores rules under.
+    const dbGuild = await prisma.guild.findFirst({
+      where: { discordId: guild.id },
+      select: { id: true },
+    });
+
+    if (!dbGuild) return;
+
+    // Moderation runs before XP on purpose. A message the word filter deleted
+    // must not also earn XP, or a spammer is rewarded for the exact behaviour
+    // the filter exists to stop.
+    const moderation = await moderateMessage(message, dbGuild.id);
+
+    if (moderation.deleted) {
+      log.debug("Message was deleted, no XP awarded", {
+        guildId: message.guildId,
+        userId: message.author.id,
+      });
+      return;
+    }
+
     const result = await handleMessageActivity({
       guildId: message.guildId,
       guildDiscordId: guild.id,
@@ -46,10 +69,14 @@ async function onMessage(message: Message, client: Client) {
 
     if (!result.recorded) return;
 
-    // Roles and rewards are checked on every qualifying message, not only on a
-    // level change: a membership-age rule or a message-count reward can become
-    // satisfied without a level up.
-    await checkProgression(message);
+    // Roles, rewards, challenges and achievements are checked on every
+    // qualifying message, not only on a level change: a membership-age rule or
+    // a message-count reward can become satisfied without a level up.
+    if (message.member) {
+      await tryApplyProgression(message.member, dbGuild.id, {
+        activity: { kind: "MESSAGE" },
+      });
+    }
 
     if (!result.xp?.leveledUp) {
       if (result.denial) {
@@ -71,29 +98,6 @@ async function onMessage(message: Message, client: Client) {
       reason: error instanceof Error ? error.message : "unknown",
     });
   }
-}
-
-/**
- * Apply any roles or rewards the member now qualifies for.
- *
- * Failures inside the services are already reported, so this only guards
- * against the guild lookup throwing.
- */
-async function checkProgression(message: Message) {
-  const discordMember = message.member;
-
-  if (!discordMember) return;
-
-  const guild = await prisma.guild.findFirst({
-    where: { discordId: message.guildId ?? "" },
-    select: { id: true },
-  });
-
-  if (!guild) return;
-
-  // The message already earned XP, so it counts towards a message-count
-  // challenge. A message that did not earn XP never reaches this handler.
-  await tryApplyProgression(discordMember, guild.id, { activity: { kind: "MESSAGE" } });
 }
 
 /** Post the level-up message in the channel where it happened. */
