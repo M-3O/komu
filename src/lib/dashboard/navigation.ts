@@ -1,12 +1,13 @@
 /**
  * Dashboard navigation, kept in one place so the sidebar and any future
  * command palette stay in sync (PRD section 8).
+ *
+ * Every entry here has a page behind it. A link that 404s is worse than a
+ * missing link, so nothing is listed until it works.
  */
 export interface NavItem {
   href: string;
   label: string;
-  /** Shown as unavailable until the matching phase is built. */
-  phase: number;
 }
 
 export interface NavSection {
@@ -18,32 +19,32 @@ export const DASHBOARD_NAV: NavSection[] = [
   {
     title: "Overview",
     items: [
-      { href: "/dashboard", label: "Overview", phase: 0 },
-      { href: "/dashboard/streams", label: "Channels", phase: 4 },
-      { href: "/dashboard/alerts", label: "Stream Alerts", phase: 5 },
+      { href: "/dashboard", label: "Overview" },
+      { href: "/dashboard/streams", label: "Channels" },
+      { href: "/dashboard/alerts", label: "Stream Alerts" },
     ],
   },
   {
     title: "Engagement",
     items: [
-      { href: "/dashboard/xp", label: "XP & Levels", phase: 6 },
-      { href: "/dashboard/roles", label: "Roles", phase: 7 },
-      { href: "/dashboard/leaderboards", label: "Leaderboards", phase: 8 },
+      { href: "/dashboard/xp", label: "XP & Levels" },
+      { href: "/dashboard/roles", label: "Roles" },
+      { href: "/dashboard/leaderboards", label: "Leaderboards" },
     ],
   },
   {
     title: "Gamification",
     items: [
-      { href: "/dashboard/rewards", label: "Rewards", phase: 9 },
-      { href: "/dashboard/challenges", label: "Challenges", phase: 10 },
-      { href: "/dashboard/achievements", label: "Achievements", phase: 11 },
+      { href: "/dashboard/rewards", label: "Rewards" },
+      { href: "/dashboard/challenges", label: "Challenges" },
+      { href: "/dashboard/achievements", label: "Achievements" },
     ],
   },
   {
     title: "Management",
     items: [
-      { href: "/dashboard/moderation", label: "Moderation", phase: 12 },
-      { href: "/dashboard/analytics", label: "Analytics", phase: 13 },
+      { href: "/dashboard/moderation", label: "Moderation" },
+      { href: "/dashboard/analytics", label: "Analytics" },
     ],
   },
 ];

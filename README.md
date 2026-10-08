@@ -204,7 +204,7 @@ to announce.
 
 ### Abuse prevention
 
-Configured per server on the `guilds` table for now:
+Configured on `/dashboard/xp`:
 
 | Setting                | Default | Purpose                              |
 | ---------------------- | ------- | ------------------------------------ |
@@ -218,6 +218,32 @@ a short hash of the last message, so Discord content is never stored.
 
 The daily cap resets lazily: `xpToday` is reset when it is read and found to
 be from an earlier day. That avoids a scheduled job, which V1 rules out.
+
+A `xpDailyCap` of **zero means no limit**, matching what `applyDailyCap`
+actually does. A `xpMessageCooldownSecs` of zero likewise disables the
+cooldown.
+
+**The page shows what the numbers imply.** Typing a daily cap updates a live
+panel: how many messages a member can actually earn from per day, and which of
+the two limits is doing the work. A creator choosing 200 XP per day with 15 XP
+per message has not realised that caps them at 13 messages a day; showing the
+consequence is more useful than refusing the value, since the value may well
+be deliberate.
+
+**Turning XP off does not reset anyone's progress.** It stops new awards from
+messages; attendance, rewards, challenges and achievements still pay out, and
+existing XP and levels are untouched. Verified live against the seeded members.
+
+### The level curve
+
+```
+xpForLevel(N) = 100 * N * (N + 1) / 2
+```
+
+Level 2 at 100 XP, level 5 at 750, level 10 at 2,750, level 25 at 16,250. The
+curve is the same for every server and is not configurable — only the XP per
+message is, so the page shows the curve alongside what the current award is
+worth in messages.
 
 ### Two copies of the same number
 
@@ -748,7 +774,7 @@ src/
 │   ├── twitch/     Twitch Helix client and normaliser
 │   ├── youtube/    YouTube Data API client and normaliser
 │   ├── kick/       Kick public API client and normaliser
-│   └── xp/         XP awards, daily window, anti-abuse rules
+│   └── xp/         XP awards, daily window, anti-abuse rules, settings
 ├── instrumentation.ts  Starts the optional in-process poller
 ├── bot/            Discord bot (its own process)
 │   ├── index.ts      Entry point
@@ -904,8 +930,6 @@ implementation plan.
 - **Membership-age roles and rewards** are evaluated on join and on activity,
   not on a daily sweep. A silent member misses the threshold until they
   interact.
-- **`/dashboard/xp`** is listed in the sidebar but not built. XP settings are
-  editable in the database only.
 - **Challenges have no announcement channel.** A completion is logged and
   appears on the dashboard and in `/challenge`, but nothing is posted to
   Discord automatically. `Challenge` has no channel column to post to.
@@ -917,6 +941,10 @@ implementation plan.
 - **YouTube polling is quota-bound.** Every poll costs 101 units against a
   default 10,000 per day, so the interval must be five minutes or longer. This
   is YouTube's pricing, not a Komu limit.
+- **Nothing is verified against a live Discord server.** The OAuth round trip,
+  bot login, alert delivery, the 14 slash commands and the YouTube and Kick API
+  calls all need real credentials. What is verified is the logic behind them,
+  against the live database.
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 
