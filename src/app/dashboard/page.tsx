@@ -3,16 +3,18 @@ import { Suspense } from "react";
 
 import { getAnalytics } from "@/lib/analytics/queries";
 import { getDashboardStats } from "@/lib/dashboard/get-dashboard-stats";
+import { getSetupChecklist } from "@/lib/dashboard/setup-checklist";
 
 export const metadata = { title: "Overview" };
 
 /**
  * Dashboard overview.
  *
- * A short read on the last 30 days, linking to the full analytics page. The
- * data access sits in its own component behind `<Suspense>`: the outer page
- * renders immediately and the stats stream in, which is what Cache Components
- * expects for uncached data (database reads here).
+ * A short read on the last 30 days, linking to the full analytics page, plus a
+ * setup checklist built from the real state of the installation. The data
+ * access sits in its own components behind `<Suspense>`: the outer page renders
+ * immediately and the stats stream in, which is what Cache Components expects
+ * for uncached data (database reads here).
  */
 export default function DashboardPage() {
   return (
@@ -29,16 +31,89 @@ export default function DashboardPage() {
         <RecentActivity />
       </Suspense>
 
-      <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-6">
-        <h2 className="font-semibold">Next steps</h2>
-        <ol className="mt-3 flex list-inside list-decimal flex-col gap-1.5 text-sm text-[color:var(--color-komu-muted)]">
-          <li>Log in with Discord to confirm your server</li>
-          <li>Connect Twitch, YouTube or Kick</li>
-          <li>Choose the Discord channel for stream alerts</li>
-          <li>Enable XP for community activity</li>
-        </ol>
-      </section>
+      <Suspense fallback={<ChecklistSkeleton />}>
+        <SetupChecklistPanel />
+      </Suspense>
     </div>
+  );
+}
+
+/**
+ * The setup checklist, reflecting what is actually configured.
+ *
+ * This replaced a fixed list of steps that told every creator to do the same
+ * things, including ones they had already finished. A checklist that does not
+ * change is worse than none, because it teaches people to stop reading it.
+ */
+async function SetupChecklistPanel() {
+  const { steps, completed, total, finished } = await getSetupChecklist();
+
+  const outstanding = steps.filter((step) => !step.done);
+
+  return (
+    <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-semibold">Setup</h2>
+        <span className="text-sm text-[color:var(--color-komu-muted)]">
+          {completed} of {total} done
+        </span>
+      </div>
+
+      {finished ? (
+        <p className="mt-3 text-sm text-[color:var(--color-komu-muted)]">
+          Everything is set up. Alerts will post when you go live.
+        </p>
+      ) : (
+        <ul className="mt-3 flex flex-col gap-2">
+          {steps.map((step) => (
+            <li key={step.id} className="flex items-start gap-3 text-sm">
+              <span
+                aria-hidden
+                className={
+                  step.done
+                    ? "mt-0.5 text-[color:var(--color-komu-accent)]"
+                    : "mt-0.5 text-[color:var(--color-komu-muted)]"
+                }
+              >
+                {step.done ? "✓" : "○"}
+              </span>
+
+              <span className={step.done ? "opacity-60" : ""}>
+                <span className="font-medium">{step.label}</span>
+                <span className="block text-[color:var(--color-komu-muted)]">
+                  {step.detail}
+                </span>
+              </span>
+
+              {step.href ? (
+                <Link
+                  href={step.href}
+                  className="ml-auto shrink-0 self-center text-xs text-[color:var(--color-komu-accent)] hover:underline"
+                >
+                  Set up
+                </Link>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {outstanding.length > 0 && !finished ? (
+        <p className="mt-4 text-xs text-[color:var(--color-komu-muted)]">
+          The alert role and role rules are optional. Everything else is needed
+          before alerts can work.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function ChecklistSkeleton() {
+  return (
+    <div
+      className="h-56 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+      aria-hidden
+    />
   );
 }
 

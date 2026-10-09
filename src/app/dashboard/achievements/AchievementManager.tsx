@@ -2,13 +2,14 @@
 
 import { useActionState } from "react";
 
-import {
+  import {
   createAchievementAction,
   deleteAchievementAction,
   INITIAL_ACHIEVEMENT_STATE,
   toggleAchievementAction,
   type AchievementFormState,
 } from "./actions";
+import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 
 interface RoleOption {
   id: string;
@@ -229,14 +230,7 @@ function AchievementList({ achievements }: { achievements: AchievementRow[] }) {
               </button>
             </form>
 
-            <form action={deleteAchievementAction.bind(null, achievement.id)}>
-              <button
-                type="submit"
-                className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm text-[color:var(--color-komu-muted)] transition hover:border-[color:var(--color-komu-live)] hover:text-[color:var(--color-komu-live)]"
-              >
-                Delete
-              </button>
-            </form>
+            <ConfirmButton action={deleteAchievementAction.bind(null, achievement.id)} question="This achievement and every member's unlock will be removed." />
           </span>
         </li>
       ))}

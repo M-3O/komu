@@ -14,18 +14,17 @@ import { requireCurrentUser } from "@/lib/auth/current-user";
 export default function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   return (
     <div className="flex min-h-screen">
-      <aside className="w-60 shrink-0 border-r border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]">
-        <DashboardNav />
-      </aside>
+      <DashboardNav />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end border-b border-[color:var(--color-komu-border)] px-8 py-3">
+        {/* Padding on the left clears the mobile menu button. */}
+        <header className="flex items-center justify-end border-b border-[color:var(--color-komu-border)] px-8 py-3 pl-16 md:pl-8">
           <Suspense fallback={<div className="h-8 w-24" />}>
             <CurrentUserHeader />
           </Suspense>
         </header>
 
-        <main className="min-w-0 flex-1 p-8">{children}</main>
+        <main className="min-w-0 flex-1 p-4 pt-16 md:p-8 md:pt-8">{children}</main>
       </div>
     </div>
   );

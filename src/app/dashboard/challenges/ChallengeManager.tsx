@@ -2,13 +2,14 @@
 
 import { useActionState, useState } from "react";
 
-import {
+  import {
   createChallengeAction,
   deleteChallengeAction,
   INITIAL_CHALLENGE_STATE,
   toggleChallengeAction,
   type ChallengeFormState,
 } from "./actions";
+import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 
 interface RoleOption {
   id: string;
@@ -209,14 +210,7 @@ function ChallengeList({ challenges }: { challenges: ChallengeRow[] }) {
               </button>
             </form>
 
-            <form action={deleteChallengeAction.bind(null, challenge.id)}>
-              <button
-                type="submit"
-                className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm text-[color:var(--color-komu-muted)] transition hover:border-[color:var(--color-komu-live)] hover:text-[color:var(--color-komu-live)]"
-              >
-                Delete
-              </button>
-            </form>
+            <ConfirmButton action={deleteChallengeAction.bind(null, challenge.id)} question="This challenge and all member progress will be removed." />
           </span>
         </li>
       ))}

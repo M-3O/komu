@@ -59,6 +59,7 @@ The dashboard is at <http://localhost:3000/dashboard>.
 | `npm run lint`        | ESLint                                      |
 | `npm run typecheck`   | Generate route types, then typecheck         |
 | `npm test`            | Unit tests                                  |
+| `npm run test:integration` | Integration tests, needs a database    |
 | `npm run check:bot`   | Verify the bot's imports load cleanly        |
 | `npm run verify`      | Everything above, plus a production build    |
 | `npm run db:migrate`  | Create and apply a migration in development |
@@ -728,6 +729,46 @@ to `Bob's Stream` before it reaches Discord.
   absence is the signal. `is_live` is checked as well, in case a block is
   present but stale.
 
+## Tests
+
+Two suites, because they need different things.
+
+| Command | Needs | What it covers |
+| ------- | ----- | -------------- |
+| `npm test` | nothing | Pure logic: level maths, eligibility rules, normalisation, validation |
+| `npm run test:integration` | `DATABASE_URL` | Constraints, transactions and one-shot guarantees |
+
+`npm test` runs on every commit and needs nothing. Integration tests need a
+real database because the things they check are only answerable against one:
+a unique constraint either holds or it does not, two writes either race or they
+do not, a transaction either rolls back or it does not.
+
+**Integration tests write, so point them at a development database.** Each test
+builds its own rows from a unique seed and removes them afterwards, and the
+suite runs serially, but it is not safe against production.
+
+### The bugs they exist to catch
+
+Every one of these produced wrong numbers or no output, with no error anywhere:
+
+- A Discord snowflake passed where a database member id was expected. Every
+  query matched nothing, so **no challenge reward was ever paid out**.
+- An achievement re-awarding its XP on every check.
+- Two copies of a member's XP drifting apart.
+- Attendance counted more than once from repeated reactions.
+
+The second file is named `uniqueness.integration.test.ts` because that is what
+it is about: the one-shot guarantees, proven by the database rather than
+assumed from reading the code.
+
+### A silent hazard worth knowing about
+
+`awardXp` with a member id that does not exist returns `{ awarded: 0 }` rather
+than throwing. That reads like "the member was capped" rather than "you passed
+the wrong id", which is exactly how the snowflake bug stayed hidden for a
+whole phase. There is a test asserting the current behaviour, so changing it to
+throw would be a visible, deliberate change.
+
 ## Verifying changes
 
 ```bash
@@ -897,8 +938,9 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 13 are done, including 4b. That is every numbered phase in the
-implementation plan.
+Phases 0 to 14 are done, including 4b, along with the integration half of
+Phase 15. What remains is the manual test pass in Phase 15, which needs a real
+Discord server.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -918,8 +960,9 @@ implementation plan.
 | 11    | Achievements                                | Done   |
 | 12    | Moderation                                  | Done   |
 | 13    | Analytics                                   | Done   |
-| 12    | Moderation                                  | Todo   |
-| 13    | Analytics                                   | Todo   |
+| 14    | Dashboard polish                            | Done   |
+| 15    | Testing (integration suite)                 | Done   |
+| 15    | Testing (manual, needs a live server)       | Todo   |
 
 ### Known gaps in V1
 
@@ -944,7 +987,11 @@ implementation plan.
 - **Nothing is verified against a live Discord server.** The OAuth round trip,
   bot login, alert delivery, the 14 slash commands and the YouTube and Kick API
   calls all need real credentials. What is verified is the logic behind them,
-  against the live database.
+  against the live database. Phase 15's manual test pass is still outstanding
+  for this reason.
+- **`awardXp` fails silently on an unknown member id.** It returns
+  `{ awarded: 0 }` rather than throwing, which is indistinguishable from the
+  member being capped. See "Tests" above.
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 

@@ -2,13 +2,14 @@
 
 import { useActionState } from "react";
 
-import {
+  import {
   createRoleRuleAction,
   deleteRoleRuleAction,
   INITIAL_ROLE_STATE,
   toggleRoleRuleAction,
   type RoleFormState,
 } from "./actions";
+import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 
 interface RoleOption {
   id: string;
@@ -74,14 +75,10 @@ export function RoleRuleManager({
                   </button>
                 </form>
 
-                <form action={deleteRoleRuleAction.bind(null, rule.id)}>
-                  <button
-                    type="submit"
-                    className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm text-[color:var(--color-komu-muted)] transition hover:border-[color:var(--color-komu-live)] hover:text-[color:var(--color-komu-live)]"
-                  >
-                    Delete
-                  </button>
-                </form>
+                <ConfirmButton
+                  action={deleteRoleRuleAction.bind(null, rule.id)}
+                  question="This rule will be removed. Roles already granted stay."
+                />
               </span>
             </li>
           ))}

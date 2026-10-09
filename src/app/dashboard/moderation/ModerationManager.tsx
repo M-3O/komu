@@ -2,13 +2,14 @@
 
 import { useActionState, useState } from "react";
 
-import {
+  import {
   createModerationRuleAction,
   deleteModerationRuleAction,
   INITIAL_MODERATION_STATE,
   toggleModerationRuleAction,
   type ModerationFormState,
 } from "./actions";
+import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 
 interface ChannelOption {
   id: string;
@@ -157,14 +158,7 @@ function RuleList({ rules }: { rules: RuleRow[] }) {
               </button>
             </form>
 
-            <form action={deleteModerationRuleAction.bind(null, rule.id)}>
-              <button
-                type="submit"
-                className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm text-[color:var(--color-komu-muted)] transition hover:border-[color:var(--color-komu-live)] hover:text-[color:var(--color-komu-live)]"
-              >
-                Delete
-              </button>
-            </form>
+            <ConfirmButton action={deleteModerationRuleAction.bind(null, rule.id)} question="This rule will be removed. Its past actions stay in the log." />
           </span>
         </li>
       ))}

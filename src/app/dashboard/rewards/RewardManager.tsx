@@ -2,13 +2,14 @@
 
 import { useActionState, useState } from "react";
 
-import {
+  import {
   createRewardAction,
   deleteRewardAction,
   INITIAL_REWARD_STATE,
   toggleRewardAction,
   type RewardFormState,
 } from "./actions";
+import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 
 interface RoleOption {
   id: string;
@@ -193,14 +194,7 @@ function RewardList({ rewards }: { rewards: RewardRow[] }) {
               </button>
             </form>
 
-            <form action={deleteRewardAction.bind(null, reward.id)}>
-              <button
-                type="submit"
-                className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm text-[color:var(--color-komu-muted)] transition hover:border-[color:var(--color-komu-live)] hover:text-[color:var(--color-komu-live)]"
-              >
-                Delete
-              </button>
-            </form>
+            <ConfirmButton action={deleteRewardAction.bind(null, reward.id)} question="This reward and its history will be removed." />
           </span>
         </li>
       ))}
