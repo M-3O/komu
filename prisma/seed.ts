@@ -189,9 +189,14 @@ async function main() {
     create: {
       id: "seed-reward-watch-10h",
       guildId: guild.id,
-      name: "10 Hours Watched",
-      description: "Reward for sticking around for ten hours of streams.",
-      conditionMetric: ProgressionMetric.WATCH_TIME_HOURS,
+      name: "Stream Regular",
+      description: "Attending ten streams.",
+      // Attendance, not watch time. The plan's example for this reward was
+      // "10 hours watched -> 500 XP and a VIP role", but watch time is never
+      // collected, so a reward built on it could never be granted. Seeding one
+      // would put a permanently unsatisfiable rule in every new database and
+      // contradict the dashboard, which refuses to offer the metric.
+      conditionMetric: ProgressionMetric.STREAM_ATTENDANCE,
       conditionThreshold: 10,
     },
   });

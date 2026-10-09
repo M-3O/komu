@@ -32,8 +32,10 @@ const schema = z.object({
   // Twitch, for example.
   TWITCH_CLIENT_ID: z.string().optional(),
   TWITCH_CLIENT_SECRET: z.string().optional(),
+  // Only the client id, which doubles as the Data API key. Google issues a
+  // client secret alongside it, but a public API key needs no OAuth flow, so
+  // there is nothing for a secret to be used in.
   YOUTUBE_CLIENT_ID: z.string().optional(),
-  YOUTUBE_CLIENT_SECRET: z.string().optional(),
   KICK_CLIENT_ID: z.string().optional(),
   KICK_CLIENT_SECRET: z.string().optional(),
 });

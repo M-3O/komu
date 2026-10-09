@@ -11,9 +11,6 @@ import { GatewayIntentBits, Partials } from "discord.js";
  * undefined value deep in the client.
  */
 
-/** Discord API version the client talks to. */
-export const DISCORD_API_VERSION = "10";
-
 /**
  * Gateway intents.
  *
@@ -65,9 +62,4 @@ export function getBotToken(): string {
 /** This application's id, used when registering slash commands. */
 export function getApplicationId(): string {
   return required("DISCORD_CLIENT_ID");
-}
-
-/** True when the essential bot credentials are present. */
-export function isBotConfigured(): boolean {
-  return Boolean(process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CLIENT_ID);
 }

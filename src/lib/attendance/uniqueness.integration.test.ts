@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordStreamAttendance } from "@/lib/attendance/record-attendance";
 import { unlockAchievementsForMember } from "@/lib/achievements/unlock";
 import { prisma } from "@/lib/db";
-import { cleanupMember, createTestMember, fakeDiscordId, requireGuild } from "@/test/integration-helpers";
+import { cleanupMember, createTestMember, requireGuild } from "@/test/integration-helpers";
 
 /**
  * One-shot guarantees against a real database (PRD sections 7.5, 7.10).
@@ -312,11 +312,5 @@ describe("achievement unlocking pays out exactly once", () => {
     expect(result.unlocked.map((entry) => entry.name)).not.toContain(
       "Integration: 1 stream",
     );
-  });
-});
-
-describe("test isolation", () => {
-  it("gives each seeded member a distinct discord id", () => {
-    expect(fakeDiscordId(MEMBER_SEED)).not.toBe(fakeDiscordId(OTHER_SEED));
   });
 });

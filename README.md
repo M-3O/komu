@@ -121,8 +121,9 @@ Accepted for each provider:
 ### YouTube setup
 
 Create OAuth credentials in the Google Cloud Console, enable the **YouTube Data
-API v3**, and set `YOUTUBE_CLIENT_ID`. The client id doubles as the API key; the
-secret is unused, because a public API key needs no OAuth flow.
+API v3**, and set `YOUTUBE_CLIENT_ID`. The client id doubles as the API key.
+Google also issues a client secret, but a public API key needs no OAuth flow, so
+there is nowhere for a secret to be used and Komu does not ask for one.
 
 **Read the quota note below before setting a poll interval.** Checking whether
 a YouTube channel is live costs 101 quota units per poll.
@@ -780,6 +781,22 @@ above existed, reported nothing. Every service that takes a discord.js
 `GuildMember` resolves the row by `discordId` first and names it `memberRow`,
 so the two cannot be confused at a glance. This was worth auditing after the
 one time it went wrong.
+
+### Seed data
+
+`npm run db:seed` builds a small server: one guild, four members, a Twitch
+account with alerts enabled, a role rule, a reward, a challenge, three
+achievements and a word filter.
+
+The seeded reward is the plan's deliverable example — **500 XP and a VIP role**
+— built on `STREAM_ATTENDANCE` rather than `WATCH_TIME_HOURS`. The plan's
+version was "10 hours watched", but watch time is never collected, so that
+reward could never be granted. A seeded rule the dashboard refuses to offer is
+worse than none, because it looks configured and does nothing.
+
+Seeding is idempotent with `update: {}`, so re-running it does not overwrite
+changes. The consequence is that a fixture whose meaning changes keeps its old
+row until that row is deleted.
 
 ## Verifying changes
 

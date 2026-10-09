@@ -37,8 +37,8 @@ export default function StreamsPage() {
 }
 
 async function LiveStatusPanel() {
-  const user = await requireCurrentUser("/dashboard/streams");
-  void user;
+  // Called for the redirect it performs when signed out, not for its value.
+  await requireCurrentUser("/dashboard/streams");
 
   const guild = await prisma.guild.findFirst({
     orderBy: { createdAt: "asc" },
