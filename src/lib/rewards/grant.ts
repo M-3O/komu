@@ -49,7 +49,7 @@ export async function grantEligibleRewards(
 ): Promise<GrantRewardsResult> {
   const result: GrantRewardsResult = { granted: [], failed: [], skipped: 0 };
 
-  const member = await prisma.guildMember.findFirst({
+  const memberRow = await prisma.guildMember.findFirst({
     where: { guildId: input.guildId, discordId: input.member.id },
     select: {
       id: true,
@@ -62,7 +62,7 @@ export async function grantEligibleRewards(
     },
   });
 
-  if (!member) return result;
+  if (!memberRow) return result;
 
   const rewards = await prisma.reward.findMany({
     where: {
@@ -87,23 +87,23 @@ export async function grantEligibleRewards(
   const grants = await prisma.rewardGrant.findMany({
     where: {
       guildId: input.guildId,
-      memberId: member.id,
+      memberId: memberRow.id,
       rewardId: { in: rewards.map((reward) => reward.id) },
     },
     select: { rewardId: true, memberId: true },
   });
 
   const stats = {
-    xp: member.xp,
-    level: member.level,
-    messageCount: member.messageCount,
-    streamAttendanceCount: member.streamAttendanceCount,
-    watchTimeMinutes: member.watchTimeMinutes,
-    joinedAt: member.joinedAt,
+    xp: memberRow.xp,
+    level: memberRow.level,
+    messageCount: memberRow.messageCount,
+    streamAttendanceCount: memberRow.streamAttendanceCount,
+    watchTimeMinutes: memberRow.watchTimeMinutes,
+    joinedAt: memberRow.joinedAt,
   };
 
   for (const reward of rewards as RewardInput[]) {
-    const eligibility = evaluateReward(reward, stats, grants, member.id);
+    const eligibility = evaluateReward(reward, stats, grants, memberRow.id);
 
     // A moderator may hand out the same reward twice, but never one the
     // member has not earned. Letting a manual grant bypass "not yet met"
@@ -121,7 +121,7 @@ export async function grantEligibleRewards(
     const outcome = await grantReward({
       member: input.member,
       guildId: input.guildId,
-      memberRowId: member.id,
+      memberRowId: memberRow.id,
       rewardId: reward.id,
       rewardName: reward.name,
       // The progress that satisfied the condition, in that condition's own
@@ -135,7 +135,7 @@ export async function grantEligibleRewards(
       result.granted.push(reward.name);
       log.info("Reward granted", {
         guildId: input.guildId,
-        memberId: member.id,
+        memberId: memberRow.id,
         reward: reward.name,
         manual: Boolean(input.manualByDiscordId),
       });
@@ -143,7 +143,7 @@ export async function grantEligibleRewards(
       result.failed.push({ reward: reward.name, reason: outcome.error });
       log.warn("Reward grant failed", {
         guildId: input.guildId,
-        memberId: member.id,
+        memberId: memberRow.id,
         reward: reward.name,
         reason: outcome.error,
       });

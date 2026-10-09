@@ -761,13 +761,25 @@ The second file is named `uniqueness.integration.test.ts` because that is what
 it is about: the one-shot guarantees, proven by the database rather than
 assumed from reading the code.
 
-### A silent hazard worth knowing about
+### A silent hazard, now logged
 
-`awardXp` with a member id that does not exist returns `{ awarded: 0 }` rather
-than throwing. That reads like "the member was capped" rather than "you passed
-the wrong id", which is exactly how the snowflake bug stayed hidden for a
-whole phase. There is a test asserting the current behaviour, so changing it to
-throw would be a visible, deliberate change.
+`awardXp` with a member id that does not exist returns `{ awarded: 0 }`. That
+reads like "the member was capped" rather than "you passed the wrong id", which
+is exactly how the snowflake bug stayed hidden for a whole phase. It now logs
+an error carrying the guild, member id, source and reason, so the mistake is
+diagnosable from the server logs.
+
+It still returns rather than throwing, because every caller resolves the member
+row first and a throw would take down whichever handler mis-called it.
+
+### The two ids that look the same
+
+`GuildMember.id` is a Discord snowflake; the database's own member id is a
+cuid. Passing one where the other belongs matches nothing and, before the log
+above existed, reported nothing. Every service that takes a discord.js
+`GuildMember` resolves the row by `discordId` first and names it `memberRow`,
+so the two cannot be confused at a glance. This was worth auditing after the
+one time it went wrong.
 
 ## Verifying changes
 
@@ -989,9 +1001,11 @@ Discord server.
   calls all need real credentials. What is verified is the logic behind them,
   against the live database. Phase 15's manual test pass is still outstanding
   for this reason.
-- **`awardXp` fails silently on an unknown member id.** It returns
-  `{ awarded: 0 }` rather than throwing, which is indistinguishable from the
-  member being capped. See "Tests" above.
+- **`awardXp` returns rather than throws for an unknown member id.** It now
+  logs an error with the guild, member id, source and reason, which is what
+  makes a wrong-id bug diagnosable. It still returns `{ awarded: 0 }` rather
+  than throwing, because every caller resolves the member row first and a
+  throw would take down whichever handler mis-called it.
 
 See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 

@@ -92,6 +92,21 @@ export async function awardXp(input: AwardXpInput): Promise<AwardXpResult> {
     });
 
     if (!member) {
+      // Logged rather than thrown. Every current caller resolves the member
+      // row first, so this only fires when a caller passes a wrong id, and
+      // throwing here would take down whichever handler mis-calls it.
+      //
+      // The usual cause is a Discord snowflake passed where a database member
+      // id belongs: `member.id` on a discord.js GuildMember is a snowflake,
+      // while this expects the cuid. That mistake matches nothing and reports
+      // nothing, which is how it once hid a whole phase of broken payouts.
+      log.error("XP award skipped: member not found", {
+        guildId: input.guildId,
+        memberId: input.memberId,
+        source: input.source,
+        reason: input.reason,
+      });
+
       return {
         awarded: 0,
         totalXp: 0,

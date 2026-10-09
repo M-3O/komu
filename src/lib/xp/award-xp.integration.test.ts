@@ -197,17 +197,14 @@ describe("awardXp", () => {
     expect(after.level).toBe(result.newLevel);
   });
 
-  it("silently awards nothing to a member that does not exist", async () => {
-    // Documented hazard, not endorsed behaviour.
+  it("awards nothing for a member that does not exist, and logs why", async () => {
+    // Still returns rather than throwing: every current caller resolves the
+    // member row first, so this only fires when a caller passes a wrong id,
+    // and throwing would take down whichever handler mis-calls it.
     //
-    // This is the exact failure shape that bit the challenge payout service in
-    // an earlier phase: a Discord snowflake passed where a database member id
-    // was expected, every query matched nothing, and nothing errored. Here the
-    // same mistake produces `{awarded: 0}`, which reads like "the member was
-    // already capped" rather than "you passed the wrong id".
-    //
-    // Asserting the real behaviour so a future change to throw is a visible,
-    // deliberate difference rather than a silent one.
+    // The important part is that it now logs. The usual cause is a Discord
+    // snowflake passed where a database member id belongs, and that mistake
+    // previously produced no output at all.
     const result = await awardXp({
       guildId: guild.id,
       memberId: "no-such-member-id",
@@ -216,7 +213,7 @@ describe("awardXp", () => {
     });
 
     expect(result.awarded).toBe(0);
-    expect(result.totalXp).toBe(0);
+    expect(result.note).toBe("Member not found.");
   });
 
   it("writes no transaction for a member that does not exist", async () => {
