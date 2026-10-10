@@ -59,7 +59,10 @@ async function onMessage(message: Message, client: Client) {
     }
 
     const result = await handleMessageActivity({
-      guildId: message.guildId,
+      // The database's internal id, not `message.guildId`. Every lookup inside
+      // handleMessageActivity queries the `guilds.id` cuid, so passing the
+      // Discord snowflake made the lookup miss and silently record nothing.
+      guildId: dbGuild.id,
       guildDiscordId: guild.id,
       discordUserId: message.author.id,
       username: message.author.username,
@@ -67,7 +70,16 @@ async function onMessage(message: Message, client: Client) {
       message: message.content,
     });
 
-    if (!result.recorded) return;
+    if (!result.recorded) {
+      // Normally means the guild was deleted from the database while the bot
+      // still had it cached. Worth surfacing rather than dropping silently.
+      log.warn("Message activity was not recorded", {
+        guildId: message.guildId,
+        userId: message.author.id,
+        reason: "no matching guild row",
+      });
+      return;
+    }
 
     // Roles, rewards, challenges and achievements are checked on every
     // qualifying message, not only on a level change: a membership-age rule or
