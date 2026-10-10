@@ -46,6 +46,13 @@ export async function GET(request: Request) {
     redirect("/login?error=state_mismatch");
   }
 
+  // `redirect()` signals by throwing a NEXT_REDIRECT error, so it must stay
+  // outside this try/catch. A redirect raised from inside would be caught here
+  // and rewritten into `login_failed`, turning every successful sign-in into a
+  // failure. The try block therefore only decides *where* to go; the redirect
+  // itself happens afterwards.
+  let destination: string;
+
   try {
     const token = await exchangeCodeForToken(code);
     const [discordUser, guilds] = await Promise.all([
@@ -88,20 +95,20 @@ export async function GET(request: Request) {
       log.info("Signed-in user cannot manage the connected server", {
         discordId: discordUser.id,
       });
-      redirect("/setup");
+      destination = "/setup";
+    } else if (!guild) {
+      destination = "/setup";
+    } else {
+      destination = storedState.returnTo ?? "/dashboard";
     }
-
-    if (!guild) {
-      redirect("/setup");
-    }
-
-    redirect(storedState.returnTo ?? "/dashboard");
   } catch (error) {
     log.error("Discord callback failed", {
       reason: error instanceof Error ? error.message : "unknown",
     });
     redirect("/login?error=login_failed");
   }
+
+  redirect(destination);
 }
 
 interface StoredState {
