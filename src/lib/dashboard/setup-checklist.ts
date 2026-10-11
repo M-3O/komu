@@ -44,6 +44,10 @@ export async function getSetupChecklist(): Promise<SetupChecklist> {
         select: { id: true, provider: true, username: true },
       },
       alertConfigs: {
+        // Only a connected account can post an alert. Counting the settings of
+        // a disconnected account would report alerts as configured after the
+        // creator removed the channel that made them work.
+        where: { streamingAccount: { disconnectedAt: null } },
         select: {
           id: true,
           enabled: true,
@@ -74,7 +78,17 @@ export async function getSetupChecklist(): Promise<SetupChecklist> {
   }
 
   const hasAccount = guild.streamingAccounts.length > 0;
-  const enabledAlert = guild.alertConfigs.find((config) => config.enabled);
+
+  // `some` rather than `find`: one connected account may have alerts enabled
+  // but no channel chosen yet, and it must not mask another that is complete.
+  const alertsReady = guild.alertConfigs.some(
+    (config) => config.enabled && Boolean(config.channelId),
+  );
+
+  const mentionReady = guild.alertConfigs.some(
+    (config) =>
+      config.enabled && config.mentionEnabled && Boolean(config.mentionRoleId),
+  );
 
   const steps: SetupStep[] = [
     {
@@ -97,22 +111,22 @@ export async function getSetupChecklist(): Promise<SetupChecklist> {
     {
       id: "alert-channel",
       label: "Choose the alert channel",
-      detail: enabledAlert?.channelId
+      detail: alertsReady
         ? "Alerts will be posted there."
         : "Pick the channel live alerts should be posted in.",
-      done: Boolean(enabledAlert?.channelId),
-      href: enabledAlert?.channelId ? undefined : "/dashboard/alerts",
+      done: alertsReady,
+      href: alertsReady ? undefined : "/dashboard/alerts",
     },
     {
       id: "alert-role",
       label: "Choose an alert role",
-      detail: enabledAlert?.mentionEnabled && enabledAlert?.mentionRoleId
+      detail: mentionReady
         ? "Mentions will use this role."
         : "Optional. Pick a role so stream alerts ping your community.",
       // Optional, so it never blocks completion. It is still tracked, because
       // a creator who wants it should be able to tell that they do not have it.
-      done: Boolean(enabledAlert?.mentionEnabled && enabledAlert?.mentionRoleId),
-      href: enabledAlert?.mentionEnabled && enabledAlert?.mentionRoleId ? undefined : "/dashboard/alerts",
+      done: mentionReady,
+      href: mentionReady ? undefined : "/dashboard/alerts",
     },
     {
       id: "xp",

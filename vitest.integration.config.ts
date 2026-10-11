@@ -1,3 +1,4 @@
+import { config } from "dotenv";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -10,13 +11,22 @@ import { defineConfig } from "vitest/config";
  * a Discord snowflake passed where a database id was expected, which matched
  * nothing and reported no error.
  *
- * Run with `npm run test:integration`, which needs DATABASE_URL. Each test
- * builds its own guild and member rows and removes them afterwards, so the
- * suite is safe to run against a development database.
+ * Run with `npm run test:integration`. Each test builds its own guild and
+ * member rows and removes them afterwards, so the suite is safe to run against
+ * a development database.
  *
  * Never pointed at production. The files below all write, and a mistake here
  * would delete real data rather than test data.
  */
+
+/**
+ * Next.js loads `.env.local` for the app but vitest does not, so without this
+ * every integration test failed on a missing DATABASE_URL. Loaded the same way
+ * the bot loads it, and a variable already in the environment wins, so CI can
+ * still point the suite somewhere else.
+ */
+config({ path: [".env.local", ".env"] });
+
 export default defineConfig({
   test: {
     include: ["src/**/*.integration.test.ts"],
