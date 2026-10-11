@@ -1,5 +1,7 @@
 "use server";
 
+import { refresh } from "next/cache";
+
 import { prisma } from "@/lib/db";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { createLogger } from "@/lib/logger";
@@ -77,6 +79,8 @@ export async function updateXpSettingsAction(
     cooldownSecs: input.xpMessageCooldownSecs,
     dailyCap: input.xpDailyCap,
   });
+
+  refresh();
 
   return { ok: true };
 }

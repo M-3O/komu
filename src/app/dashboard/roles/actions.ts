@@ -1,6 +1,7 @@
 "use server";
 
 import { ProgressionMetric } from "@prisma/client";
+import { refresh } from "next/cache";
 
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
@@ -105,6 +106,8 @@ export async function createRoleRuleAction(
 
   log.info("Created role rule", { guildId: guild.id, name, metric, threshold });
 
+  refresh();
+
   return { ok: true };
 }
 
@@ -122,6 +125,8 @@ export async function toggleRoleRuleAction(ruleId: string): Promise<void> {
     where: { id: rule.id },
     data: { enabled: !rule.enabled },
   });
+
+  refresh();
 }
 
 export async function deleteRoleRuleAction(ruleId: string): Promise<void> {
@@ -134,5 +139,6 @@ export async function deleteRoleRuleAction(ruleId: string): Promise<void> {
 
   if (deleted.count > 0) {
     log.info("Deleted role rule", { guildId: guild.id, ruleId });
+    refresh();
   }
 }

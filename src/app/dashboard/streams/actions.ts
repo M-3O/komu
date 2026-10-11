@@ -1,6 +1,7 @@
 "use server";
 
 import { StreamingProvider } from "@prisma/client";
+import { refresh } from "next/cache";
 
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
@@ -60,7 +61,17 @@ export async function connectChannelAction(
   const guildId = await requireGuildId();
   const result = await connectStreamingAccount(guildId, provider, identifier);
 
-  return result.ok ? { ok: true } : { ok: false, error: result.error };
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  // The channel list is a Server Component reading the database, and a Server
+  // Action only re-renders the current route when it asks for it. Without
+  // this the write succeeds and the page keeps showing the old list, so the
+  // channel appears to have been ignored.
+  refresh();
+
+  return { ok: true };
 }
 
 export async function disconnectChannelAction(
@@ -71,6 +82,7 @@ export async function disconnectChannelAction(
 
   if (result.ok) {
     log.info("Channel disconnected from dashboard", { streamingAccountId });
+    refresh();
   }
 
   return result.ok ? { ok: true } : { ok: false, error: result.error };

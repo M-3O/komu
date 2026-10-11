@@ -11,6 +11,15 @@ interface ConnectedChannel {
   displayName: string | null;
 }
 
+interface ChannelFormState {
+  ok?: boolean;
+  error?: string;
+  /** The channel that was just connected, so the confirmation can name it. */
+  connected?: string;
+}
+
+const INITIAL_STATE: ChannelFormState = {};
+
 /**
  * Connect a streaming channel, and disconnect one that is no longer wanted.
  *
@@ -24,33 +33,40 @@ export function ChannelManager({
   channels: ConnectedChannel[];
   availableProviders: string[];
 }) {
-  const [state, formAction, pending] = useActionState(
+  const [state, formAction, pending] = useActionState<
+    ChannelFormState,
+    FormData
+  >(
     async (
-      _previous: { error: string } | null,
+      _previous: ChannelFormState,
       formData: FormData,
-    ) => {
+    ): Promise<ChannelFormState> => {
       const provider = String(formData.get("provider") ?? "");
       const identifier = String(formData.get("identifier") ?? "").trim();
 
       const result = await connectChannelAction(provider, identifier);
 
-      return result.ok ? null : { error: result.error ?? "Could not connect." };
+      return result.ok
+        ? { ok: true, connected: identifier }
+        : { ok: false, error: result.error ?? "Could not connect." };
     },
-    null,
+    INITIAL_STATE,
   );
 
   const [disconnectState, disconnectAction, disconnectPending] =
-    useActionState(
+    useActionState<ChannelFormState, FormData>(
       async (
-        _previous: { error: string } | null,
+        _previous: ChannelFormState,
         formData: FormData,
-      ) => {
+      ): Promise<ChannelFormState> => {
         const id = String(formData.get("streamingAccountId") ?? "");
         const result = await disconnectChannelAction(id);
 
-        return result.ok ? null : { error: result.error ?? "Could not disconnect." };
+        return result.ok
+          ? { ok: true }
+          : { ok: false, error: result.error ?? "Could not disconnect." };
       },
-      null,
+      INITIAL_STATE,
     );
 
   return (
@@ -142,6 +158,16 @@ export function ChannelManager({
             className="rounded-md border border-[color:var(--color-komu-live)] bg-[color:var(--color-komu-live)]/10 p-3 text-sm text-[color:var(--color-komu-live)]"
           >
             {state.error}
+          </p>
+        ) : null}
+
+        {state?.ok ? (
+          <p
+            role="status"
+            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-3 text-sm"
+          >
+            {state.connected} is connected. Komu checks it for live streams every
+            few minutes.
           </p>
         ) : null}
 

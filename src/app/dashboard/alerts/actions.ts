@@ -1,6 +1,7 @@
 "use server";
 
 import { AlertMessageMode } from "@prisma/client";
+import { refresh } from "next/cache";
 
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
@@ -134,6 +135,8 @@ export async function saveAlertSettingsAction(
     streamingAccountId: account.id,
     enabled: settings.enabled,
   });
+
+  refresh();
 
   return { ok: true };
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { ChallengeRequirementType } from "@prisma/client";
+import { refresh } from "next/cache";
 
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import {
@@ -169,6 +170,8 @@ export async function createChallengeAction(
     requirements: requirements.length,
   });
 
+  refresh();
+
   return { ok: true };
 }
 
@@ -186,6 +189,8 @@ export async function toggleChallengeAction(challengeId: string): Promise<void> 
     where: { id: challenge.id },
     data: { enabled: !challenge.enabled },
   });
+
+  refresh();
 }
 
 export async function deleteChallengeAction(challengeId: string): Promise<void> {
@@ -199,5 +204,6 @@ export async function deleteChallengeAction(challengeId: string): Promise<void> 
 
   if (deleted.count > 0) {
     log.info("Deleted challenge", { guildId: guild.id, challengeId });
+    refresh();
   }
 }

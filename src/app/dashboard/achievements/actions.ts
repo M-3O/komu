@@ -1,6 +1,7 @@
 "use server";
 
 import { AchievementType } from "@prisma/client";
+import { refresh } from "next/cache";
 
 import {
   AVAILABLE_ACHIEVEMENT_TYPES,
@@ -124,6 +125,8 @@ export async function createAchievementAction(
 
   log.info("Created achievement", { guildId: guild.id, name, type, threshold, hidden });
 
+  refresh();
+
   return { ok: true };
 }
 
@@ -141,6 +144,8 @@ export async function toggleAchievementAction(achievementId: string): Promise<vo
     where: { id: achievement.id },
     data: { enabled: !achievement.enabled },
   });
+
+  refresh();
 }
 
 export async function deleteAchievementAction(achievementId: string): Promise<void> {
@@ -153,5 +158,6 @@ export async function deleteAchievementAction(achievementId: string): Promise<vo
 
   if (deleted.count > 0) {
     log.info("Deleted achievement", { guildId: guild.id, achievementId });
+    refresh();
   }
 }

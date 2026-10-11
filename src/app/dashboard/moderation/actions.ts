@@ -1,6 +1,7 @@
 "use server";
 
 import { ModerationActionType, ModerationRuleType } from "@prisma/client";
+import { refresh } from "next/cache";
 
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
@@ -193,6 +194,8 @@ export async function createModerationRuleAction(
 
   log.info("Created moderation rule", { guildId: guild.id, name, type, action });
 
+  refresh();
+
   return { ok: true };
 }
 
@@ -210,6 +213,8 @@ export async function toggleModerationRuleAction(ruleId: string): Promise<void> 
     where: { id: rule.id },
     data: { enabled: !rule.enabled },
   });
+
+  refresh();
 }
 
 export async function deleteModerationRuleAction(ruleId: string): Promise<void> {
@@ -223,5 +228,6 @@ export async function deleteModerationRuleAction(ruleId: string): Promise<void> 
 
   if (deleted.count > 0) {
     log.info("Deleted moderation rule", { guildId: guild.id, ruleId });
+    refresh();
   }
 }

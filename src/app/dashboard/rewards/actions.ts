@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma, ProgressionMetric, RewardActionType } from "@prisma/client";
+import { refresh } from "next/cache";
 
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
@@ -121,6 +122,8 @@ export async function createRewardAction(
     action: actionType,
   });
 
+  refresh();
+
   return { ok: true };
 }
 
@@ -219,6 +222,8 @@ export async function toggleRewardAction(rewardId: string): Promise<void> {
     where: { id: reward.id },
     data: { enabled: !reward.enabled },
   });
+
+  refresh();
 }
 
 export async function deleteRewardAction(rewardId: string): Promise<void> {
@@ -232,5 +237,6 @@ export async function deleteRewardAction(rewardId: string): Promise<void> {
 
   if (deleted.count > 0) {
     log.info("Deleted reward", { guildId: guild.id, rewardId });
+    refresh();
   }
 }
