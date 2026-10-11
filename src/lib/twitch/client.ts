@@ -20,6 +20,9 @@ const TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 /** Twitch rate limits are reported in requests per minute. */
 const RATE_LIMIT_STATUS = 429;
 
+/** Twitch answered, but refused the request it was given. */
+const INVALID_REQUEST_STATUS = 400;
+
 const log = createLogger("stream");
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
@@ -166,6 +169,16 @@ async function helixGet<T>(
       path,
       status: response.status,
     });
+
+    // A 400 means Twitch refused what was sent, not that Twitch is down, so
+    // the two are reported differently.
+    if (response.status === INVALID_REQUEST_STATUS) {
+      throw new TwitchApiError(
+        "Twitch rejected the request as invalid.",
+        response.status,
+        "INVALID_REQUEST",
+      );
+    }
 
     throw new TwitchApiError(
       "Twitch could not be reached.",

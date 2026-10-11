@@ -192,6 +192,16 @@ describe("twitchAdapter.getLiveStream", () => {
       );
     });
   });
+
+  it("distinguishes a rejected request from an outage", async () => {
+    await withEnv(async () => {
+      stubFetch([{ status: 400, body: { error: "Bad Request", status: 400 } }]);
+
+      await expect(twitchAdapter.getLiveStream(account)).rejects.toThrow(
+        /rejected the request/i,
+      );
+    });
+  });
 });
 
 describe("twitchAdapter.getAccount", () => {
@@ -240,6 +250,19 @@ describe("twitchAdapter.getAccount", () => {
       const calls = stubFetch([{ body: USER_RESPONSE }]);
 
       expect(await twitchAdapter.getAccount("   ")).toBeNull();
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  it("rejects an identifier that cannot be a login without calling Twitch", async () => {
+    await withEnv(async () => {
+      const calls = stubFetch([{ body: USER_RESPONSE }]);
+
+      // Helix answers a malformed login with a 400, which would otherwise be
+      // reported as Twitch being unreachable.
+      expect(await twitchAdapter.getAccount("someone@example.com")).toBeNull();
+      expect(await twitchAdapter.getAccount("7ob7qpob2ymzwhnawlsq6tpf6vbnl8")).toBeNull();
+      expect(await twitchAdapter.getAccount("way-too-long-to-be-a-twitch-login")).toBeNull();
       expect(calls).toHaveLength(0);
     });
   });

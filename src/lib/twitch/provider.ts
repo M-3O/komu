@@ -15,6 +15,19 @@ import type {
 } from "@/lib/streams/types";
 
 /**
+ * The shape Twitch allows for a login: letters, digits and underscores.
+ *
+ * Anything else — an email address, an application client id — is rejected by
+ * Helix with a 400 rather than an empty result, which would otherwise surface
+ * as "Twitch could not be reached". Checking it here reports those the same
+ * way as a channel that genuinely does not exist.
+ */
+const LOGIN_PATTERN = /^[a-z0-9_]{4,25}$/;
+
+/** Twitch user ids are numeric, and are what the database stores. */
+const USER_ID_PATTERN = /^\d+$/;
+
+/**
  * Twitch implementation of the provider interface.
  *
  * Callers get `StreamInfo`, never a Helix response. YouTube and Kick follow
@@ -30,9 +43,13 @@ export const twitchAdapter: StreamingProviderAdapter = {
     // Twitch logins are case-insensitive and always lowercase in responses.
     const login = trimmed.toLowerCase();
 
+    if (!USER_ID_PATTERN.test(login) && !LOGIN_PATTERN.test(login)) {
+      return null;
+    }
+
     // A numeric identifier is treated as a user id, which is what the
     // database stores once an account has been connected.
-    const users = /^\d+$/.test(login)
+    const users = USER_ID_PATTERN.test(login)
       ? await getUsersById([login])
       : await getUsersByLogin([login]);
 
