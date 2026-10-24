@@ -2,7 +2,11 @@
 
 import { redirect } from "next/navigation";
 
-import { requireCurrentUser, verifyGuildAccess } from "@/lib/auth/current-user";
+import {
+  checkGuildAccess,
+  requireCurrentUser,
+  verifyGuildAccess,
+} from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 
@@ -30,16 +34,39 @@ export async function connectGuildAction(
   }
 
   // V1 manages exactly one server. If one is already connected, replace it
-  // rather than creating a second, so lookups stay unambiguous.
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.guild.findFirst({
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
+  // rather than creating a second, so lookups stay unambiguous — but only for
+  // someone who already administers it. Without the check below, anyone who
+  // administers any server of their own could connect it here and take over
+  // an installation that was not theirs.
+  const connected = await prisma.guild.findFirst({
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true, discordId: true, ownerId: true },
+  });
 
-    if (existing) {
+  if (connected && connected.discordId !== access.id) {
+    const allowed = await checkGuildAccess(user.userId, connected);
+
+    if (allowed !== "granted") {
+      log.warn("Refused to replace the connected server", {
+        userId: user.userId,
+        connectedDiscordId: connected.discordId,
+        requestedDiscordId: access.id,
+        reason: allowed,
+      });
+
+      return {
+        error:
+          allowed === "unavailable"
+            ? `Discord could not be reached, so your access to ${connected.name} could not be confirmed. Try again.`
+            : `Komu is already connected to ${connected.name}. Only an owner or administrator of that server can connect a different one.`,
+      };
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (connected) {
       await tx.guild.update({
-        where: { id: existing.id },
+        where: { id: connected.id },
         data: {
           discordId: access.id,
           name: access.name,

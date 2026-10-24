@@ -66,6 +66,13 @@ async function GuildSelection() {
     );
   }
 
+  // A server is already connected and this person cannot administer it. The
+  // action would refuse to repoint the installation, so offering the picker
+  // would only produce an error after they had chosen.
+  const canManageConnected =
+    !connected ||
+    guilds.some((guild) => guild.id === connected.discordId);
+
   return (
     <div className="flex flex-col gap-4">
       {connected ? (
@@ -74,18 +81,18 @@ async function GuildSelection() {
             Currently connected
           </p>
           <p className="font-medium">{connected.name}</p>
-          {!guilds.some((guild) => guild.id === connected.discordId) ? (
+          {!canManageConnected ? (
             <p className="mt-3 text-sm text-[color:var(--color-komu-live)]">
               You are not an owner or administrator of that server, so Komu
-              cannot manage it. Choose a different server below, or ask an
-              administrator of{" "}
-              {connected.name} to sign in.
+              cannot manage it. An installation cannot be pointed at a
+              different server by someone who does not administer this one.
+              Ask an owner or administrator of {connected.name} to sign in.
             </p>
           ) : null}
         </div>
       ) : null}
 
-      <GuildPicker guilds={guilds} />
+      {canManageConnected ? <GuildPicker guilds={guilds} /> : null}
     </div>
   );
 }
