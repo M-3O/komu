@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getDiscordRedirectUri, getServerConfig } from "@/lib/config/server-config";
+import { fetchWithTimeout } from "@/lib/http/fetch-with-timeout";
 import { createLogger } from "@/lib/logger";
 
 /**
@@ -74,7 +75,7 @@ export async function exchangeCodeForToken(
 ): Promise<DiscordTokenResponse> {
   const { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } = getServerConfig();
 
-  const response = await fetch(`${DISCORD_API_BASE}/oauth2/token`, {
+  const response = await fetchWithTimeout(`${DISCORD_API_BASE}/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -102,7 +103,7 @@ export async function exchangeCodeForToken(
 export async function fetchDiscordUser(
   accessToken: string,
 ): Promise<DiscordUser> {
-  const response = await fetch(`${DISCORD_API_BASE}/users/@me`, {
+  const response = await fetchWithTimeout(`${DISCORD_API_BASE}/users/@me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
@@ -123,7 +124,7 @@ export async function fetchDiscordUser(
 export async function fetchDiscordGuilds(
   accessToken: string,
 ): Promise<DiscordGuildSummary[]> {
-  const response = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
+  const response = await fetchWithTimeout(`${DISCORD_API_BASE}/users/@me/guilds`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 

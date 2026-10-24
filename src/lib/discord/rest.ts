@@ -1,6 +1,10 @@
 import "server-only";
 
 import { createLogger } from "@/lib/logger";
+import {
+  fetchWithTimeout,
+  isTimeoutError,
+} from "@/lib/http/fetch-with-timeout";
 
 /**
  * Discord REST calls that do not need a gateway connection.
@@ -53,7 +57,7 @@ async function discordRequest<T>(
   let response: Response;
 
   try {
-    response = await fetch(`${DISCORD_API_BASE}${path}`, {
+    response = await fetchWithTimeout(`${DISCORD_API_BASE}${path}`, {
       method,
       headers: {
         Authorization: `Bot ${getBotToken()}`,
@@ -63,7 +67,20 @@ async function discordRequest<T>(
       cache: "no-store",
     });
   } catch (error) {
-    // Network failure: Discord unreachable, DNS, timeout.
+    if (isTimeoutError(error)) {
+      log.error("Discord request timed out", { method, path });
+
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          error: "Discord did not respond in time. Try again.",
+          code: "TIMEOUT",
+        },
+      };
+    }
+
+    // Network failure: Discord unreachable or DNS.
     log.error("Discord request failed", {
       method,
       path,

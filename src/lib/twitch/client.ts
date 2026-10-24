@@ -1,6 +1,10 @@
 import "server-only";
 
 import { createLogger } from "@/lib/logger";
+import {
+  fetchWithTimeout,
+  isTimeoutError,
+} from "@/lib/http/fetch-with-timeout";
 import type { TwitchListResponse, TwitchStreamResponse, TwitchUserResponse } from "./types";
 
 /**
@@ -57,6 +61,40 @@ function getCredentials(): { clientId: string; clientSecret: string } {
 }
 
 /**
+ * Perform a request, reporting an unreachable or silent Twitch as the error
+ * type callers already handle.
+ */
+async function request(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<Response> {
+  try {
+    return await fetchWithTimeout(url, init);
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      log.error("Twitch request timed out", { label });
+      throw new TwitchApiError(
+        "Twitch did not respond in time. Try again.",
+        undefined,
+        "TIMEOUT",
+      );
+    }
+
+    log.error("Twitch request failed", {
+      label,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+
+    throw new TwitchApiError(
+      "Twitch could not be reached.",
+      undefined,
+      "NETWORK",
+    );
+  }
+}
+
+/**
  * Get an app access token, reusing the cached one until it expires.
  *
  * Twitch app tokens do not normally expire, but the response may carry an
@@ -75,7 +113,7 @@ async function getAppAccessToken(): Promise<string> {
   inFlightToken = (async () => {
     const { clientId, clientSecret } = getCredentials();
 
-    const response = await fetch(TOKEN_URL, {
+    const response = await request(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -83,7 +121,7 @@ async function getAppAccessToken(): Promise<string> {
         client_secret: clientSecret,
         grant_type: "client_credentials",
       }),
-    });
+    }, "token");
 
     if (!response.ok) {
       log.error("Twitch token request failed", { status: response.status });
@@ -145,14 +183,14 @@ async function helixGet<T>(
 
   const url = `${HELIX_BASE}${path}${search.size > 0 ? `?${search}` : ""}`;
 
-  const response = await fetch(url, {
+  const response = await request(url, {
     headers: {
       Authorization: `Bearer ${token}`,
       "Client-Id": clientId,
     },
     // Stream status changes constantly; never serve a stale copy.
     cache: "no-store",
-  });
+  }, path);
 
   if (!response.ok) {
     if (response.status === RATE_LIMIT_STATUS) {

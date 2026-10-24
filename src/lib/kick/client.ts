@@ -1,6 +1,10 @@
 import "server-only";
 
 import { createLogger } from "@/lib/logger";
+import {
+  fetchWithTimeout,
+  isTimeoutError,
+} from "@/lib/http/fetch-with-timeout";
 import type { KickChannel, KickEnvelope } from "./types";
 
 /**
@@ -60,6 +64,36 @@ function getCredentials(): { clientId: string; clientSecret: string } {
   return { clientId, clientSecret };
 }
 
+/**
+ * Perform a request, reporting an unreachable or silent Kick as the error type
+ * callers already handle.
+ */
+async function request(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<Response> {
+  try {
+    return await fetchWithTimeout(url, init);
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      log.error("Kick request timed out", { label });
+      throw new KickApiError(
+        "Kick did not respond in time. Try again.",
+        undefined,
+        "TIMEOUT",
+      );
+    }
+
+    log.error("Kick request failed", {
+      label,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+
+    throw new KickApiError("Kick could not be reached.", undefined, "NETWORK");
+  }
+}
+
 /** Get an access token, reusing the cached one until it expires. */
 async function getAccessToken(): Promise<string> {
   const now = Date.now();
@@ -73,7 +107,7 @@ async function getAccessToken(): Promise<string> {
   inFlightToken = (async () => {
     const { clientId, clientSecret } = getCredentials();
 
-    const response = await fetch(TOKEN_URL, {
+    const response = await request(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -82,7 +116,7 @@ async function getAccessToken(): Promise<string> {
         client_secret: clientSecret,
         scope: SCOPES.join(" "),
       }),
-    });
+    }, "token");
 
     if (!response.ok) {
       log.error("Kick token request failed", { status: response.status });
@@ -127,11 +161,11 @@ async function getAccessToken(): Promise<string> {
 async function apiGet<T>(path: string): Promise<T | null> {
   const token = await getAccessToken();
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await request(`${API_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     // Live status changes constantly; never serve a stale copy.
     cache: "no-store",
-  });
+  }, path);
 
   if (response.status === RATE_LIMIT_STATUS) {
     log.warn("Kick rate limit hit", { path });

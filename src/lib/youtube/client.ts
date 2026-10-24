@@ -1,6 +1,10 @@
 import "server-only";
 
 import { createLogger } from "@/lib/logger";
+import {
+  fetchWithTimeout,
+  isTimeoutError,
+} from "@/lib/http/fetch-with-timeout";
 import type {
   YouTubeChannelItem,
   YouTubeListResponse,
@@ -61,6 +65,40 @@ function getApiKey(): string {
   return key;
 }
 
+/**
+ * Perform a request, reporting an unreachable or silent YouTube as the error
+ * type callers already handle.
+ */
+async function request(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<Response> {
+  try {
+    return await fetchWithTimeout(url, init);
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      log.error("YouTube request timed out", { label });
+      throw new YouTubeApiError(
+        "YouTube did not respond in time. Try again.",
+        undefined,
+        "TIMEOUT",
+      );
+    }
+
+    log.error("YouTube request failed", {
+      label,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+
+    throw new YouTubeApiError(
+      "YouTube could not be reached.",
+      undefined,
+      "NETWORK",
+    );
+  }
+}
+
 /** Perform a request and return its `items` array. */
 async function apiGet<T>(
   path: string,
@@ -70,10 +108,10 @@ async function apiGet<T>(
 
   const search = new URLSearchParams({ ...params, key });
 
-  const response = await fetch(`${API_BASE}${path}?${search}`, {
+  const response = await request(`${API_BASE}${path}?${search}`, {
     // Live status changes constantly; never serve a stale copy.
     cache: "no-store",
-  });
+  }, path);
 
   if (!response.ok) {
     if (response.status === RATE_LIMIT_STATUS) {
