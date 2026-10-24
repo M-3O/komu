@@ -21,7 +21,26 @@ import {
  * substitute for server-side checks (see the Proxy docs).
  */
 
-export const SESSION_COOKIE_NAME = "komu_session";
+/**
+ * The session cookie name.
+ *
+ * The `__Host-` prefix is enforced by the browser: the cookie must be Secure,
+ * must have `Path=/`, and must not have a Domain. That makes it impossible for
+ * a sibling subdomain (or a server on another domain that a DNS rebind points
+ * here) to overwrite the session. Browsers treat localhost as a secure origin,
+ * so development over http://localhost still works; a LAN IP over plain HTTP
+ * does not, which matches the HTTPS requirement for a real deployment.
+ */
+export const SESSION_COOKIE_NAME = "__Host-komu_session";
+
+/**
+ * The one-shot OAuth state cookie.
+ *
+ * Shares the `__Host-` prefix so it is Secure, path-scoped to `/`, and cannot
+ * be set by a sibling subdomain. It carries the state, the post-login path and
+ * the PKCE verifier as one opaque JSON value.
+ */
+export const OAUTH_STATE_COOKIE_NAME = `${SESSION_COOKIE_NAME}_oauth_state`;
 
 /** Where to send anonymous visitors. */
 export const LOGIN_PATH = "/login";
@@ -33,6 +52,7 @@ export const DEFAULT_REDIRECT_PATH = "/dashboard";
 export async function createSession(payload: {
   userId: string;
   discordId: string;
+  sessionVersion: number;
 }): Promise<void> {
   const secret = getAuthSecret();
   if (!secret) {
@@ -45,6 +65,7 @@ export async function createSession(payload: {
     {
       userId: payload.userId,
       discordId: payload.discordId,
+      sessionVersion: payload.sessionVersion,
       exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     },
     secret,
@@ -57,7 +78,9 @@ export async function createSession(payload: {
     value: token,
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // Required by the `__Host-` prefix. Localhost is treated as secure, so
+    // this does not break `npm run dev`.
+    secure: true,
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
   });
@@ -66,7 +89,19 @@ export async function createSession(payload: {
 /** Remove the session cookie. */
 export async function destroySession(): Promise<void> {
   const store = await cookies();
-  store.delete(SESSION_COOKIE_NAME);
+
+  // Expire explicitly with the same attributes rather than `delete()`, which
+  // omits `Secure`. A browser will not accept a non-Secure Set-Cookie for a
+  // `__Host-` name, so a plain delete can leave the cookie in place.
+  store.set({
+    name: SESSION_COOKIE_NAME,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    path: "/",
+    maxAge: 0,
+  });
 }
 
 /** The current session, or null when signed out. */

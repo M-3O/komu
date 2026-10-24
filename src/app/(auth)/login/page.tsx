@@ -11,6 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     "That sign-in link expired or could not be verified. Please try again.",
   login_failed:
     "We could not complete sign-in with Discord. Please try again in a moment.",
+  rate_limited: "Too many sign-in attempts. Wait a minute and try again.",
   not_configured:
     "Discord sign-in is not configured yet. Add your Discord credentials to .env.local and restart the app.",
 };

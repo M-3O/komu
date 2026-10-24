@@ -18,6 +18,7 @@ function makePayload(overrides: Partial<SessionPayload> = {}): SessionPayload {
   return {
     userId: "user_123",
     discordId: "555123456789",
+    sessionVersion: 0,
     exp: NOW_SECONDS + 3600,
     ...overrides,
   };
@@ -101,6 +102,19 @@ describe("verifySessionToken", () => {
     const bad = Buffer.from(JSON.stringify({ userId: 1 })).toString("base64url");
     const token = signSessionToken(bad as never, SECRET);
 
+    expect(verifySessionToken(token, SECRET, NOW)).toBeNull();
+  });
+
+  it("rejects a token issued before session versioning", () => {
+    const legacy = {
+      userId: "user_123",
+      discordId: "555123456789",
+      exp: NOW_SECONDS + 3600,
+    };
+    const token = signSessionToken(legacy as never, SECRET);
+
+    // Old tokens have no version to compare against a row, so honouring them
+    // would be a way around revocation. Forcing one sign-in is the safe side.
     expect(verifySessionToken(token, SECRET, NOW)).toBeNull();
   });
 });

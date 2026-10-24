@@ -151,6 +151,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Incremented on sign-out. A session token carries the value it was signed
+  /// with, and is rejected once the row has moved past it. This is what makes
+  /// sign-out revoke every token immediately instead of at the seven-day
+  /// expiry, including a copy taken from the browser.
+  sessionVersion Int @default(0)
+
   discordAccount DiscordAccount?
 
   /// Server configurations this user has set up. Present for future

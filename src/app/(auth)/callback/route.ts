@@ -9,10 +9,20 @@ import {
   fetchDiscordUser,
 } from "@/lib/auth/discord-oauth";
 import { manageableGuilds } from "@/lib/auth/discord-permissions";
-import { createSession, SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import {
+  createSession,
+  OAUTH_STATE_COOKIE_NAME,
+} from "@/lib/auth/session";
 import { encryptToken } from "@/lib/auth/token-crypto";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
+import { clientKey, RateLimiter } from "@/lib/rate-limit";
+
+/**
+ * Each callback costs three Discord API calls, so a small burst ceiling is
+ * enough. Normal sign-in uses one.
+ */
+const callbackLimiter = new RateLimiter(20, 60_000);
 
 /**
  * Finish the Discord login flow.
@@ -25,6 +35,14 @@ import { createLogger } from "@/lib/logger";
 export async function GET(request: Request) {
   const log = createLogger("auth");
   const requestUrl = new URL(request.url);
+  const limit = callbackLimiter.consume(clientKey(request));
+
+  if (!limit.allowed) {
+    log.warn("OAuth callback rate limited", {
+      retryAfterSeconds: limit.retryAfterSeconds,
+    });
+    redirect("/login?error=rate_limited");
+  }
 
   const code = requestUrl.searchParams.get("code");
   const state = requestUrl.searchParams.get("state");
@@ -55,7 +73,7 @@ export async function GET(request: Request) {
   let destination: string;
 
   try {
-    const token = await exchangeCodeForToken(code);
+    const token = await exchangeCodeForToken(code, storedState.codeVerifier);
     const [discordUser, guilds] = await Promise.all([
       fetchDiscordUser(token.access_token),
       fetchDiscordGuilds(token.access_token),
@@ -78,6 +96,7 @@ export async function GET(request: Request) {
     await createSession({
       userId: account.userId,
       discordId: account.discordId,
+      sessionVersion: account.sessionVersion,
     });
 
     log.info("Discord login succeeded", {
@@ -119,37 +138,67 @@ export async function GET(request: Request) {
 interface StoredState {
   state: string;
   returnTo: string | null;
+  /** The PKCE verifier whose hash was sent in the authorize URL. */
+  codeVerifier: string;
 }
 
 /** Read and unpack the one-shot state cookie set by /api/auth/login. */
 async function readStateCookie(): Promise<StoredState | null> {
   const store = await cookies();
-  const raw = store.get(`${SESSION_COOKIE_NAME}_oauth_state`)?.value;
+  const raw = store.get(OAUTH_STATE_COOKIE_NAME)?.value;
 
   if (!raw) return null;
 
-  const separator = raw.lastIndexOf(".");
-  if (separator <= 0) return null;
+  let parsed: unknown;
 
-  let returnTo: string | null = null;
   try {
-    const decoded = Buffer.from(
-      raw.slice(separator + 1),
-      "base64url",
-    ).toString("utf8");
-    returnTo = decoded.startsWith("/") && !decoded.startsWith("//")
-      ? decoded
-      : null;
+    parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
   } catch {
-    returnTo = null;
+    return null;
   }
 
-  return { state: raw.slice(0, separator), returnTo };
+  if (typeof parsed !== "object" || parsed === null) return null;
+
+  const candidate = parsed as Record<string, unknown>;
+
+  if (
+    typeof candidate.state !== "string" ||
+    typeof candidate.codeVerifier !== "string"
+  ) {
+    return null;
+  }
+
+  // Only same-site relative paths, for the same reason the login route
+  // sanitizes the value on the way in.
+  const returnTo =
+    typeof candidate.returnTo === "string" &&
+    candidate.returnTo.startsWith("/") &&
+    !candidate.returnTo.startsWith("//") &&
+    !candidate.returnTo.startsWith("/\\")
+      ? candidate.returnTo
+      : null;
+
+  return {
+    state: candidate.state,
+    codeVerifier: candidate.codeVerifier,
+    returnTo,
+  };
 }
 
 async function clearStateCookie(): Promise<void> {
   const store = await cookies();
-  store.delete(`${SESSION_COOKIE_NAME}_oauth_state`);
+
+  // Same reasoning as the session cookie: `__Host-` cookies require Secure
+  // even on the response that expires them.
+  store.set({
+    name: OAUTH_STATE_COOKIE_NAME,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    path: "/",
+    maxAge: 0,
+  });
 }
 
 /** Constant-time comparison of the stored and returned state values. */
@@ -167,7 +216,11 @@ async function upsertDiscordAccount(input: {
   avatarHash: string | null;
   accessToken: string;
   tokenExpiresAt: Date | null;
-}): Promise<{ userId: string; discordId: string }> {
+}): Promise<{
+  userId: string;
+  discordId: string;
+  sessionVersion: number;
+}> {
   const details = {
     username: input.username,
     avatarHash: input.avatarHash,
@@ -185,7 +238,14 @@ async function upsertDiscordAccount(input: {
       discordId: input.discordId,
       user: { create: {} },
     },
+    // The version is what makes sign-out revoke older tokens, so the new
+    // session must be signed with the row's current value.
+    include: { user: { select: { sessionVersion: true } } },
   });
 
-  return { userId: account.userId, discordId: account.discordId };
+  return {
+    userId: account.userId,
+    discordId: account.discordId,
+    sessionVersion: account.user.sessionVersion,
+  };
 }

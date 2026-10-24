@@ -1,10 +1,12 @@
 import "server-only";
 
+import { redirect } from "next/navigation";
+
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { manageableGuilds } from "./discord-permissions";
 import { fetchDiscordGuilds } from "./discord-oauth";
-import { getSession, requireSession } from "./session";
+import { getSession, requireSession, LOGIN_PATH } from "./session";
 import { decryptToken } from "./token-crypto";
 
 /**
@@ -35,10 +37,17 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       username: true,
       avatarHash: true,
       userId: true,
+      user: { select: { sessionVersion: true } },
     },
   });
 
   if (!account) return null;
+
+  // Signing out bumps the user's version, which invalidates every token
+  // issued before that moment. The check lives here because this is the one
+  // place that already reads the user row; a self-contained token cannot
+  // answer whether it has been revoked.
+  if (account.user.sessionVersion !== session.sessionVersion) return null;
 
   return {
     userId: account.userId,
@@ -58,8 +67,10 @@ export async function requireCurrentUser(
   const user = await getCurrentUser();
 
   if (!user) {
-    // The cookie is valid but the account is gone: treat as signed out.
-    throw new Error("Session is no longer valid. Please sign in again.");
+    // The cookie is valid but the account is gone or its session version was
+    // bumped by a sign-out. Send the visitor to the login screen rather than
+    // an error boundary.
+    redirect(LOGIN_PATH);
   }
 
   return user;

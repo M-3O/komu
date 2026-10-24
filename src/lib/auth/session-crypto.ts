@@ -15,6 +15,14 @@ export interface SessionPayload {
   userId: string;
   /** Discord snowflake, handy for logging without a database read. */
   discordId: string;
+  /**
+   * The user's session version at the moment the token was signed.
+   *
+   * `getCurrentUser` compares this with the row. A mismatch means the user
+   * signed out (or a future "sign out everywhere" action bumped it) and the
+   * token must stop working immediately, not at its expiry.
+   */
+  sessionVersion: number;
   /** Expiry as a unix timestamp in seconds. */
   exp: number;
 }
@@ -88,6 +96,9 @@ function isSessionPayload(value: unknown): value is SessionPayload {
   return (
     typeof candidate.userId === "string" &&
     typeof candidate.discordId === "string" &&
+    typeof candidate.sessionVersion === "number" &&
+    Number.isInteger(candidate.sessionVersion) &&
+    candidate.sessionVersion >= 0 &&
     typeof candidate.exp === "number" &&
     Number.isFinite(candidate.exp)
   );

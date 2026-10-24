@@ -53,9 +53,14 @@ export interface DiscordTokenResponse {
  * Build the URL the browser is sent to in order to start the login flow.
  *
  * `state` is echoed back by Discord and checked in the callback to stop
- * another site from feeding us a forged authorization code.
+ * another site from feeding us a forged authorization code. `codeChallenge`
+ * is the S256 half of PKCE: Discord remembers it, and the token exchange must
+ * present the verifier that produced it.
  */
-export function buildDiscordAuthorizeUrl(state: string): string {
+export function buildDiscordAuthorizeUrl(
+  state: string,
+  codeChallenge: string,
+): string {
   const { DISCORD_CLIENT_ID } = getServerConfig();
 
   const params = new URLSearchParams({
@@ -64,6 +69,8 @@ export function buildDiscordAuthorizeUrl(state: string): string {
     redirect_uri: getDiscordRedirectUri(),
     scope: OAUTH_SCOPES.join(" "),
     state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
 
   return `${DISCORD_OAUTH_BASE}/authorize?${params.toString()}`;
@@ -72,6 +79,7 @@ export function buildDiscordAuthorizeUrl(state: string): string {
 /** Swap an authorization code for an access token. */
 export async function exchangeCodeForToken(
   code: string,
+  codeVerifier: string,
 ): Promise<DiscordTokenResponse> {
   const { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } = getServerConfig();
 
@@ -83,6 +91,7 @@ export async function exchangeCodeForToken(
       client_secret: DISCORD_CLIENT_SECRET,
       grant_type: "authorization_code",
       code,
+      code_verifier: codeVerifier,
       redirect_uri: getDiscordRedirectUri(),
     }),
   });
@@ -97,6 +106,36 @@ export async function exchangeCodeForToken(
   }
 
   return (await response.json()) as DiscordTokenResponse;
+}
+
+/**
+ * Revoke an access token at Discord.
+ *
+ * Called on sign-out. The caller clears the local copy whether or not Discord
+ * accepts the request, so a Discord outage cannot leave a usable token behind
+ * in the database. A token that is already invalid also comes back non-2xx;
+ * that is not an error worth surfacing to the person signing out.
+ */
+export async function revokeDiscordToken(accessToken: string): Promise<void> {
+  const { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } = getServerConfig();
+
+  const response = await fetchWithTimeout(
+    `${DISCORD_API_BASE}/oauth2/token/revoke`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        token: accessToken,
+        token_type_hint: "access_token",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    log.warn("Discord token revocation failed", { status: response.status });
+  }
 }
 
 /** Read the authenticated Discord user. */
