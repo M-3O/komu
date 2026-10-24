@@ -7,7 +7,7 @@ import {
   AVAILABLE_ACHIEVEMENT_TYPES,
   UNAVAILABLE_ACHIEVEMENT_TYPES,
 } from "@/lib/achievements/evaluate";
-import { requireCurrentUser } from "@/lib/auth/current-user";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import { prisma } from "@/lib/db";
 import { listGuildRoles } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
@@ -32,19 +32,6 @@ export interface AchievementFormState {
 // and exporting a plain object from one throws in the browser when the form
 // imports it.
 
-async function requireGuild() {
-  await requireCurrentUser("/dashboard/achievements");
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, discordId: true },
-  });
-
-  if (!guild) throw new Error("No Discord server is connected yet.");
-
-  return guild;
-}
-
 function isAvailableType(value: string): value is AchievementType {
   return (AVAILABLE_ACHIEVEMENT_TYPES as string[]).includes(value);
 }
@@ -53,7 +40,7 @@ export async function createAchievementAction(
   _previous: AchievementFormState,
   formData: FormData,
 ): Promise<AchievementFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/achievements");
 
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
@@ -134,7 +121,7 @@ export async function createAchievementAction(
 }
 
 export async function toggleAchievementAction(achievementId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/achievements");
 
   const achievement = await prisma.achievement.findFirst({
     where: { id: achievementId, guildId: guild.id },
@@ -152,7 +139,7 @@ export async function toggleAchievementAction(achievementId: string): Promise<vo
 }
 
 export async function deleteAchievementAction(achievementId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/achievements");
 
   // Unlocks cascade from the achievement.
   const deleted = await prisma.achievement.deleteMany({

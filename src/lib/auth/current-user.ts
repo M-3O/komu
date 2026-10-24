@@ -135,22 +135,61 @@ export async function verifyGuildAccess(
   return { id: match.id, name: match.name, icon: match.icon };
 }
 
-/**
- * Whether the signed-in user may configure the already-connected server.
- *
- * V1 manages a single server, so anyone without access to it has nothing to
- * do here.
- */
-export async function canAccessPrimaryGuild(
-  userId: string,
-): Promise<boolean> {
-  const guild = await prisma.guild.findFirst({
+/** The connected server. V1 manages exactly one. */
+export interface PrimaryGuild {
+  id: string;
+  name: string;
+  discordId: string;
+  ownerId: string | null;
+}
+
+/** The connected server, or null before setup has run. */
+export async function getPrimaryGuild(): Promise<PrimaryGuild | null> {
+  return prisma.guild.findFirst({
     orderBy: { createdAt: "asc" },
-    select: { discordId: true },
+    select: { id: true, name: true, discordId: true, ownerId: true },
   });
+}
 
-  if (!guild) return false;
+/**
+ * The outcome of an access check.
+ *
+ * `unavailable` is kept apart from `denied` because the two need different
+ * answers: Discord being unreachable says nothing about the caller, and
+ * telling an administrator they lack permission would send them looking for
+ * a problem that is not theirs.
+ */
+export type GuildAccess = "granted" | "denied" | "unavailable";
 
-  const access = await verifyGuildAccess(userId, guild.discordId);
-  return access !== null;
+/**
+ * Whether this user may configure the given server.
+ *
+ * The owner recorded at setup is answered without a network call. That is the
+ * common case, it keeps a settings save from waiting on Discord, and it means
+ * an outage cannot lock the person who connected the server out of it.
+ *
+ * Everyone else is checked against Discord, because a co-administrator of the
+ * same server has as much right to be here and the local row cannot say who
+ * they are. The answer is deliberately not cached: a permission revoked in
+ * Discord should stop working here immediately, not at the end of a TTL.
+ */
+export async function checkGuildAccess(
+  userId: string,
+  guild: Pick<PrimaryGuild, "discordId" | "ownerId">,
+): Promise<GuildAccess> {
+  if (guild.ownerId === userId) return "granted";
+
+  try {
+    return (await verifyGuildAccess(userId, guild.discordId))
+      ? "granted"
+      : "denied";
+  } catch (error) {
+    log.error("Could not verify guild access", {
+      userId,
+      guildDiscordId: guild.discordId,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+
+    return "unavailable";
+  }
 }

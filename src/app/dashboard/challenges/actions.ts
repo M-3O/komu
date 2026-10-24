@@ -3,7 +3,7 @@
 import { ChallengeRequirementType } from "@prisma/client";
 import { refresh } from "next/cache";
 
-import { requireCurrentUser } from "@/lib/auth/current-user";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import {
   AVAILABLE_REQUIREMENT_TYPES,
   UNAVAILABLE_REQUIREMENT_TYPES,
@@ -32,19 +32,6 @@ export interface ChallengeFormState {
 // and exporting a plain object from one throws in the browser when the form
 // imports it.
 
-async function requireGuild() {
-  await requireCurrentUser("/dashboard/challenges");
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, discordId: true },
-  });
-
-  if (!guild) throw new Error("No Discord server is connected yet.");
-
-  return guild;
-}
-
 function isAvailableType(value: string): value is ChallengeRequirementType {
   return (AVAILABLE_REQUIREMENT_TYPES as string[]).includes(value);
 }
@@ -60,7 +47,7 @@ export async function createChallengeAction(
   _previous: ChallengeFormState,
   formData: FormData,
 ): Promise<ChallengeFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/challenges");
 
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
@@ -179,7 +166,7 @@ export async function createChallengeAction(
 }
 
 export async function toggleChallengeAction(challengeId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/challenges");
 
   const challenge = await prisma.challenge.findFirst({
     where: { id: challengeId, guildId: guild.id },
@@ -197,7 +184,7 @@ export async function toggleChallengeAction(challengeId: string): Promise<void> 
 }
 
 export async function deleteChallengeAction(challengeId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/challenges");
 
   // Scoped to the guild so a guessed id cannot delete another server's
   // challenge. Requirements and progress cascade from the challenge.

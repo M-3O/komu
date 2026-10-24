@@ -3,7 +3,7 @@
 import { ModerationActionType, ModerationRuleType } from "@prisma/client";
 import { refresh } from "next/cache";
 
-import { requireCurrentUser } from "@/lib/auth/current-user";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import { prisma } from "@/lib/db";
 import { listGuildChannels } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
@@ -30,19 +30,6 @@ export interface ModerationFormState {
 // and exporting a plain object from one throws in the browser when the form
 // imports it.
 
-async function requireGuild() {
-  await requireCurrentUser("/dashboard/moderation");
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, discordId: true },
-  });
-
-  if (!guild) throw new Error("No Discord server is connected yet.");
-
-  return guild;
-}
-
 function isRuleType(value: string): value is ModerationRuleType {
   return (["WORD_FILTER", "SPAM", "RAID_PROTECTION"] as string[]).includes(value);
 }
@@ -66,7 +53,7 @@ export async function createModerationRuleAction(
   _previous: ModerationFormState,
   formData: FormData,
 ): Promise<ModerationFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/moderation");
 
   const name = String(formData.get("name") ?? "").trim();
   const type = String(formData.get("type") ?? "");
@@ -203,7 +190,7 @@ export async function createModerationRuleAction(
 }
 
 export async function toggleModerationRuleAction(ruleId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/moderation");
 
   const rule = await prisma.moderationRule.findFirst({
     where: { id: ruleId, guildId: guild.id },
@@ -221,7 +208,7 @@ export async function toggleModerationRuleAction(ruleId: string): Promise<void> 
 }
 
 export async function deleteModerationRuleAction(ruleId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/moderation");
 
   // The log records keep a null ruleId rather than cascading away, so the
   // moderation history survives the rule that caused it.

@@ -1045,7 +1045,16 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 - The server id chosen on the setup screen is treated as untrusted input: it is
   re-checked against the user's live guild list, and the server name and icon
   come from Discord's response rather than the form.
-- Every dashboard mutation must be permission-checked server-side.
+- Every dashboard mutation resolves the server through `requireGuild`, which
+  checks that the caller administers it: the owner recorded at setup is
+  answered without a network call, anyone else against Discord. The dashboard
+  layout applies the same check and sends a visitor who fails it to `/setup`.
+  Both live in one helper because the version this replaced was copied into
+  eight action files, and all eight authenticated the caller without ever
+  authorising them.
+- Connecting a different server on the setup screen is refused unless the
+  caller already administers the connected one, so knowing a Discord account
+  is not enough to repoint an installation.
 - The alert settings form verifies the chosen channel and role against the
   guild's real channel and role list before saving, so a tampered form
   cannot point alerts at another server's channel.

@@ -3,7 +3,7 @@
 import { ProgressionMetric } from "@prisma/client";
 import { refresh } from "next/cache";
 
-import { requireCurrentUser } from "@/lib/auth/current-user";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import { prisma } from "@/lib/db";
 import { listGuildRoles } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
@@ -28,19 +28,6 @@ export interface RoleFormState {
 // "use server" file may only export async functions, and exporting a plain
 // object from one throws in the browser when the form imports it.
 
-async function requireGuild() {
-  await requireCurrentUser("/dashboard/roles");
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, discordId: true },
-  });
-
-  if (!guild) throw new Error("No Discord server is connected yet.");
-
-  return guild;
-}
-
 function isSupportedMetric(value: string): value is ProgressionMetric {
   return SUPPORTED_METRICS.includes(value as ProgressionMetric);
 }
@@ -49,7 +36,7 @@ export async function createRoleRuleAction(
   _previous: RoleFormState,
   formData: FormData,
 ): Promise<RoleFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/roles");
 
   const name = String(formData.get("name") ?? "").trim();
   const metric = String(formData.get("metric") ?? "");
@@ -114,7 +101,7 @@ export async function createRoleRuleAction(
 }
 
 export async function toggleRoleRuleAction(ruleId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/roles");
 
   const rule = await prisma.roleRule.findFirst({
     where: { id: ruleId, guildId: guild.id },
@@ -132,7 +119,7 @@ export async function toggleRoleRuleAction(ruleId: string): Promise<void> {
 }
 
 export async function deleteRoleRuleAction(ruleId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/roles");
 
   // Scoped to the guild so a guessed id cannot delete another server's rule.
   const deleted = await prisma.roleRule.deleteMany({

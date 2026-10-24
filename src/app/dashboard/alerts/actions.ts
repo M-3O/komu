@@ -3,7 +3,7 @@
 import { AlertMessageMode } from "@prisma/client";
 import { refresh } from "next/cache";
 
-import { requireCurrentUser } from "@/lib/auth/current-user";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import { prisma } from "@/lib/db";
 import {
   buildAlertMessage,
@@ -34,21 +34,6 @@ export interface AlertFormState {
 // module: the server render still succeeds and returns 200, so only the error
 // boundary shows the problem.
 
-async function requireGuild() {
-  await requireCurrentUser("/dashboard/alerts");
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, discordId: true },
-  });
-
-  if (!guild) {
-    throw new Error("No Discord server is connected yet.");
-  }
-
-  return guild;
-}
-
 /** Parse the colour field, rejecting anything that is not a hex colour. */
 function readColor(value: string): string | null {
   const hex = value.trim().replace(/^#/, "");
@@ -65,7 +50,7 @@ export async function saveAlertSettingsAction(
   _previous: AlertFormState | null,
   formData: FormData,
 ): Promise<AlertFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/alerts");
   const streamingAccountId = String(formData.get("streamingAccountId") ?? "");
 
   const account = await prisma.streamingAccount.findFirst({
@@ -151,7 +136,7 @@ export async function saveAlertSettingsAction(
 export async function sendTestAlertAction(
   streamingAccountId: string,
 ): Promise<AlertFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/alerts");
 
   const account = await prisma.streamingAccount.findFirst({
     where: { id: streamingAccountId, guildId: guild.id },

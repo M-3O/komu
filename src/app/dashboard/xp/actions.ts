@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 
 import { prisma } from "@/lib/db";
-import { requireCurrentUser } from "@/lib/auth/current-user";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import { createLogger } from "@/lib/logger";
 import { validateSettings, type XpSettingsInput } from "@/lib/xp/settings";
 
@@ -29,19 +29,6 @@ export interface XpFormState {
 // "use server" file may only export async functions, and exporting a plain
 // object from one throws in the browser when the form imports it.
 
-async function requireGuild() {
-  await requireCurrentUser("/dashboard/xp");
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true },
-  });
-
-  if (!guild) throw new Error("No Discord server is connected yet.");
-
-  return guild;
-}
-
 function readInt(formData: FormData, key: string): number {
   return Number.parseInt(String(formData.get(key) ?? ""), 10);
 }
@@ -50,7 +37,7 @@ export async function updateXpSettingsAction(
   _previous: XpFormState,
   formData: FormData,
 ): Promise<XpFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/xp");
 
   const input: XpSettingsInput = {
     xpEnabled: formData.get("xpEnabled") === "on",

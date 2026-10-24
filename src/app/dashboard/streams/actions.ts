@@ -3,8 +3,7 @@
 import { StreamingProvider } from "@prisma/client";
 import { refresh } from "next/cache";
 
-import { requireCurrentUser } from "@/lib/auth/current-user";
-import { prisma } from "@/lib/db";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import { createLogger } from "@/lib/logger";
 import {
   connectStreamingAccount,
@@ -25,19 +24,7 @@ const SUPPORTED_PROVIDERS: StreamingProvider[] = [StreamingProvider.TWITCH];
 
 /** The single connected server, which every account is scoped to. */
 async function requireGuildId(): Promise<string> {
-  await requireCurrentUser();
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true },
-  });
-
-  if (!guild) {
-    throw new Error(
-      "No Discord server is connected yet. Finish setup before adding channels.",
-    );
-  }
-
+  const guild = await requireGuild("/dashboard/streams");
   return guild.id;
 }
 

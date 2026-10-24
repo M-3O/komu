@@ -3,7 +3,7 @@
 import { Prisma, ProgressionMetric, RewardActionType } from "@prisma/client";
 import { refresh } from "next/cache";
 
-import { requireCurrentUser } from "@/lib/auth/current-user";
+import { requireGuild } from "@/lib/dashboard/require-guild";
 import { prisma } from "@/lib/db";
 import { listGuildRoles } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
@@ -30,19 +30,6 @@ export interface RewardFormState {
 // "use server" file may only export async functions, and exporting a plain
 // object from one throws in the browser when the form imports it.
 
-async function requireGuild() {
-  await requireCurrentUser("/dashboard/rewards");
-
-  const guild = await prisma.guild.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, discordId: true },
-  });
-
-  if (!guild) throw new Error("No Discord server is connected yet.");
-
-  return guild;
-}
-
 function isAvailableMetric(value: string): value is ProgressionMetric {
   return (AVAILABLE_METRICS as string[]).includes(value);
 }
@@ -64,7 +51,7 @@ export async function createRewardAction(
   _previous: RewardFormState,
   formData: FormData,
 ): Promise<RewardFormState> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/rewards");
 
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
@@ -211,7 +198,7 @@ async function buildAction(input: {
 }
 
 export async function toggleRewardAction(rewardId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/rewards");
 
   const reward = await prisma.reward.findFirst({
     where: { id: rewardId, guildId: guild.id },
@@ -229,7 +216,7 @@ export async function toggleRewardAction(rewardId: string): Promise<void> {
 }
 
 export async function deleteRewardAction(rewardId: string): Promise<void> {
-  const guild = await requireGuild();
+  const guild = await requireGuild("/dashboard/rewards");
 
   // Scoped to the guild so a guessed id cannot delete another server's
   // reward. Actions and grants cascade from the reward.
