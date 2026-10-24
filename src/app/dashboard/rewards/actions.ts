@@ -26,7 +26,9 @@ export interface RewardFormState {
   error?: string;
 }
 
-export const INITIAL_REWARD_STATE: RewardFormState = {};
+// The initial state lives with the form that uses it, in RewardManager. A
+// "use server" file may only export async functions, and exporting a plain
+// object from one throws in the browser when the form imports it.
 
 async function requireGuild() {
   await requireCurrentUser("/dashboard/rewards");

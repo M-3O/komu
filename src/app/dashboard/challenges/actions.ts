@@ -27,7 +27,10 @@ export interface ChallengeFormState {
   error?: string;
 }
 
-export const INITIAL_CHALLENGE_STATE: ChallengeFormState = {};
+// The initial state lives with the form that uses it, in
+// ChallengeManager. A "use server" file may only export async functions,
+// and exporting a plain object from one throws in the browser when the form
+// imports it.
 
 async function requireGuild() {
   await requireCurrentUser("/dashboard/challenges");

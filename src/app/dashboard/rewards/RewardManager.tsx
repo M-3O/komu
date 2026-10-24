@@ -5,11 +5,17 @@ import { useActionState, useState } from "react";
   import {
   createRewardAction,
   deleteRewardAction,
-  INITIAL_REWARD_STATE,
   toggleRewardAction,
   type RewardFormState,
 } from "./actions";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
+
+/**
+ * Declared here rather than in actions.ts because a "use server" file may only
+ * export async functions, and the Client Component imports this value at
+ * runtime.
+ */
+const INITIAL_REWARD_STATE: RewardFormState = {};
 
 interface RoleOption {
   id: string;

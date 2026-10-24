@@ -28,8 +28,11 @@ export interface AlertFormState {
   error?: string;
 }
 
-/** Initial state for `useActionState`. */
-export const INITIAL_STATE: AlertFormState = {};
+// The initial state lives with the form that uses it, in AlertForm. A
+// "use server" file may only export async functions. Exporting a plain object
+// fails at runtime, in the browser, when the Client Component imports the
+// module: the server render still succeeds and returns 200, so only the error
+// boundary shows the problem.
 
 async function requireGuild() {
   await requireCurrentUser("/dashboard/alerts");

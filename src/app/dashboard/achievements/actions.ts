@@ -27,7 +27,10 @@ export interface AchievementFormState {
   error?: string;
 }
 
-export const INITIAL_ACHIEVEMENT_STATE: AchievementFormState = {};
+// The initial state lives with the form that uses it, in
+// AchievementManager. A "use server" file may only export async functions,
+// and exporting a plain object from one throws in the browser when the form
+// imports it.
 
 async function requireGuild() {
   await requireCurrentUser("/dashboard/achievements");

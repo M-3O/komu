@@ -5,11 +5,17 @@ import { useActionState } from "react";
   import {
   createAchievementAction,
   deleteAchievementAction,
-  INITIAL_ACHIEVEMENT_STATE,
   toggleAchievementAction,
   type AchievementFormState,
 } from "./actions";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
+
+/**
+ * Declared here rather than in actions.ts because a "use server" file may only
+ * export async functions, and the Client Component imports this value at
+ * runtime.
+ */
+const INITIAL_ACHIEVEMENT_STATE: AchievementFormState = {};
 
 interface RoleOption {
   id: string;

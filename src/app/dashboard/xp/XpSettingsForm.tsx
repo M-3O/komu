@@ -3,11 +3,17 @@
 import { useActionState, useState } from "react";
 
 import {
-  INITIAL_XP_STATE,
   updateXpSettingsAction,
   type XpFormState,
 } from "./actions";
 import { capIsTheBindingLimit, cooldownMinutes, messagesPerDay } from "@/lib/xp/settings";
+
+/**
+ * Declared here rather than in actions.ts because a "use server" file may only
+ * export async functions, and the Client Component imports this value at
+ * runtime.
+ */
+const INITIAL_XP_STATE: XpFormState = {};
 
 interface XpSettings {
   xpEnabled: boolean;

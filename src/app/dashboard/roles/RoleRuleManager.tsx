@@ -5,11 +5,17 @@ import { useActionState } from "react";
   import {
   createRoleRuleAction,
   deleteRoleRuleAction,
-  INITIAL_ROLE_STATE,
   toggleRoleRuleAction,
   type RoleFormState,
 } from "./actions";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
+
+/**
+ * Declared here rather than in actions.ts because a "use server" file may only
+ * export async functions, and the Client Component imports this value at
+ * runtime.
+ */
+const INITIAL_ROLE_STATE: RoleFormState = {};
 
 interface RoleOption {
   id: string;

@@ -5,11 +5,17 @@ import { useActionState, useState } from "react";
   import {
   createModerationRuleAction,
   deleteModerationRuleAction,
-  INITIAL_MODERATION_STATE,
   toggleModerationRuleAction,
   type ModerationFormState,
 } from "./actions";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
+
+/**
+ * Declared here rather than in actions.ts because a "use server" file may only
+ * export async functions, and the Client Component imports this value at
+ * runtime.
+ */
+const INITIAL_MODERATION_STATE: ModerationFormState = {};
 
 interface ChannelOption {
   id: string;

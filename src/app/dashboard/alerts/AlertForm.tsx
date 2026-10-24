@@ -1,13 +1,19 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
 import {
-  INITIAL_STATE,
   saveAlertSettingsAction,
   sendTestAlertAction,
   type AlertFormState,
 } from "./actions";
+
+/**
+ * Declared here rather than in actions.ts because a "use server" file may only
+ * export async functions, and the Client Component imports this value at
+ * runtime.
+ */
+const INITIAL_STATE: AlertFormState = {};
 
 interface ChannelOption {
   id: string;
@@ -224,7 +230,14 @@ export function AlertForm({
 
         <button
           type="button"
-          onClick={() => testAction(new FormData())}
+          // The dispatch from useActionState has to run in a transition.
+          // Called straight from onClick it still works, but React warns and
+          // isPending does not update, so the button never says "Sending...".
+          onClick={() =>
+            startTransition(() => {
+              void testAction(new FormData());
+            })
+          }
           disabled={testPending}
           className="rounded-lg border border-[color:var(--color-komu-border)] px-5 py-2.5 font-medium transition hover:bg-[color:var(--color-komu-surface)] disabled:opacity-60"
         >
