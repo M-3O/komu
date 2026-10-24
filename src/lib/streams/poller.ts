@@ -198,6 +198,7 @@ async function deliverAlert(
     content: message.content,
     embeds: message.embeds,
     components: message.components,
+    allowedMentions: message.allowedMentions,
   });
 
   if (!result.ok) {

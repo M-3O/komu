@@ -9,6 +9,7 @@ import { listGuildChannels } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
 import { ACTIONS_FOR_TYPE } from "@/lib/moderation/rule-config";
 import { parseWordList } from "@/lib/moderation/word-filter";
+import { INPUT_LIMITS } from "@/lib/validation/limits";
 
 /**
  * Moderation rule CRUD (PRD section 7.11).
@@ -62,6 +63,12 @@ export async function createModerationRuleAction(
   const durationRaw = String(formData.get("actionDurationMins") ?? "");
 
   if (!name) return { ok: false, error: "Give the rule a name." };
+  if (name.length > INPUT_LIMITS.name) {
+    return {
+      ok: false,
+      error: `Name must be ${INPUT_LIMITS.name} characters or fewer.`,
+    };
+  }
 
   if (!isRuleType(type)) {
     return { ok: false, error: "Choose what the rule watches for." };
@@ -91,6 +98,20 @@ export async function createModerationRuleAction(
       return { ok: false, error: "Add at least one blocked word or phrase." };
     }
 
+    if (blockedWords.length > INPUT_LIMITS.blockedWords) {
+      return {
+        ok: false,
+        error: `Add at most ${INPUT_LIMITS.blockedWords} blocked words or phrases.`,
+      };
+    }
+
+    if (blockedWords.some((word) => word.length > INPUT_LIMITS.blockedWord)) {
+      return {
+        ok: false,
+        error: `Each blocked word or phrase must be ${INPUT_LIMITS.blockedWord} characters or fewer.`,
+      };
+    }
+
     data.blockedWords = blockedWords;
     data.warnOnMatch = formData.get("warnOnMatch") === "on";
   }
@@ -101,6 +122,13 @@ export async function createModerationRuleAction(
 
     if (messageLimit === null) {
       return { ok: false, error: "Set how many messages are allowed." };
+    }
+
+    if (messageLimit > INPUT_LIMITS.messageLimit) {
+      return {
+        ok: false,
+        error: `The message limit can be at most ${INPUT_LIMITS.messageLimit.toLocaleString()}.`,
+      };
     }
 
     if (windowSeconds === null) {
@@ -127,6 +155,13 @@ export async function createModerationRuleAction(
 
     if (joinThreshold === null) {
       return { ok: false, error: "Set how many joins trigger protection." };
+    }
+
+    if (joinThreshold > INPUT_LIMITS.joinThreshold) {
+      return {
+        ok: false,
+        error: `The join threshold can be at most ${INPUT_LIMITS.joinThreshold.toLocaleString()}.`,
+      };
     }
 
     if (joinWindowSeconds === null) {

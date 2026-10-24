@@ -11,6 +11,7 @@ import { requireGuild } from "@/lib/dashboard/require-guild";
 import { prisma } from "@/lib/db";
 import { listGuildRoles } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
+import { INPUT_LIMITS } from "@/lib/validation/limits";
 
 /**
  * Achievement CRUD (PRD section 7.10).
@@ -52,13 +53,32 @@ export async function createAchievementAction(
   const hidden = formData.get("hidden") === "on";
 
   if (!name) return { ok: false, error: "Give the achievement a name." };
+  if (name.length > INPUT_LIMITS.name) {
+    return {
+      ok: false,
+      error: `Name must be ${INPUT_LIMITS.name} characters or fewer.`,
+    };
+  }
+
   if (!description) {
     return { ok: false, error: "Give the achievement a description." };
+  }
+  if (description.length > INPUT_LIMITS.description) {
+    return {
+      ok: false,
+      error: `Description must be ${INPUT_LIMITS.description} characters or fewer.`,
+    };
   }
 
   // The icon is shown next to the name, and is often the only thing a member
   // sees, so an empty one would look broken rather than plain.
   if (!icon) return { ok: false, error: "Choose an icon (an emoji works well)." };
+  if (icon.length > INPUT_LIMITS.icon) {
+    return {
+      ok: false,
+      error: `Icon must be ${INPUT_LIMITS.icon} characters or fewer.`,
+    };
+  }
 
   if (!isAvailableType(type)) {
     return {
@@ -75,10 +95,24 @@ export async function createAchievementAction(
     return { ok: false, error: "Threshold must be at least 1." };
   }
 
+  if (threshold > INPUT_LIMITS.threshold) {
+    return {
+      ok: false,
+      error: `Threshold must be ${INPUT_LIMITS.threshold.toLocaleString()} or less.`,
+    };
+  }
+
   const xpReward = xpRewardRaw ? Number.parseInt(xpRewardRaw, 10) : 0;
 
   if (!Number.isFinite(xpReward) || xpReward < 0) {
     return { ok: false, error: "XP reward must be zero or a positive number." };
+  }
+
+  if (xpReward > INPUT_LIMITS.xpAmount) {
+    return {
+      ok: false,
+      error: `XP reward must be ${INPUT_LIMITS.xpAmount.toLocaleString()} or less.`,
+    };
   }
 
   let rewardRole: { id: string; name: string } | null = null;

@@ -255,4 +255,53 @@ describe("buildAlertMessage", () => {
     expect(message.embeds).toBeUndefined();
     expect(message.components).toBeUndefined();
   });
+
+  it("defuses mass mentions in the custom text", () => {
+    const message = buildAlertMessage({
+      stream,
+      settings: settings({
+        embedEnabled: false,
+        messageMode: "CUSTOM",
+        customMessage: "@everyone @here come watch {creator}",
+      }),
+      creatorName: "Sandy",
+    });
+
+    // Discord only pings on the literal string, so a zero-width space after
+    // the @ makes the mention inert while keeping the text readable.
+    expect(message.content).not.toContain("@everyone");
+    expect(message.content).not.toContain("@here");
+    expect(message.content).toContain("@\u200beveryone");
+    expect(message.content).toContain("@\u200bhere");
+  });
+
+  it("allows only the configured role to be mentioned", () => {
+    const message = buildAlertMessage({
+      stream,
+      settings: settings(),
+      creatorName: "Sandy",
+    });
+
+    expect(message.allowedMentions).toEqual({ parse: [], roles: ["222"] });
+  });
+
+  it("allows no mentions when the role ping is off", () => {
+    const message = buildAlertMessage({
+      stream,
+      settings: settings({ mentionEnabled: false }),
+      creatorName: "Sandy",
+    });
+
+    expect(message.allowedMentions).toEqual({ parse: [], roles: [] });
+  });
+
+  it("truncates a stored button label that predates the limit", () => {
+    const message = buildAlertMessage({
+      stream,
+      settings: settings({ watchButtonLabel: "x".repeat(120) }),
+      creatorName: "Sandy",
+    });
+
+    expect(message.components?.[0].components[0].label).toHaveLength(80);
+  });
 });

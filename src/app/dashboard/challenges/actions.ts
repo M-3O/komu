@@ -11,6 +11,7 @@ import {
 import { prisma } from "@/lib/db";
 import { listGuildRoles } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
+import { INPUT_LIMITS } from "@/lib/validation/limits";
 
 /**
  * Challenge CRUD (PRD section 7.9).
@@ -56,6 +57,19 @@ export async function createChallengeAction(
   const roleId = String(formData.get("roleId") ?? "");
 
   if (!name) return { ok: false, error: "Give the challenge a name." };
+  if (name.length > INPUT_LIMITS.name) {
+    return {
+      ok: false,
+      error: `Name must be ${INPUT_LIMITS.name} characters or fewer.`,
+    };
+  }
+
+  if (description.length > INPUT_LIMITS.description) {
+    return {
+      ok: false,
+      error: `Description must be ${INPUT_LIMITS.description} characters or fewer.`,
+    };
+  }
 
   // Every field named `type` is one requirement row. FormData preserves the
   // order they were submitted in, so the rows stay together.
@@ -65,6 +79,13 @@ export async function createChallengeAction(
 
   if (types.length === 0) {
     return { ok: false, error: "A challenge needs at least one requirement." };
+  }
+
+  if (types.length > INPUT_LIMITS.challengeRequirements) {
+    return {
+      ok: false,
+      error: `A challenge can have at most ${INPUT_LIMITS.challengeRequirements} requirements.`,
+    };
   }
 
   const requirements: Array<{
@@ -92,10 +113,26 @@ export async function createChallengeAction(
       };
     }
 
+    if (threshold > INPUT_LIMITS.threshold) {
+      return {
+        ok: false,
+        error: `Requirement ${index + 1} must be ${INPUT_LIMITS.threshold.toLocaleString()} or less.`,
+      };
+    }
+
+    const label = labels[index]?.trim() || null;
+
+    if (label && label.length > INPUT_LIMITS.label) {
+      return {
+        ok: false,
+        error: `Requirement ${index + 1} label must be ${INPUT_LIMITS.label} characters or fewer.`,
+      };
+    }
+
     requirements.push({
       type: rawType,
       threshold,
-      label: labels[index]?.trim() || null,
+      label,
     });
   }
 
@@ -103,6 +140,13 @@ export async function createChallengeAction(
 
   if (!Number.isFinite(xpReward) || xpReward < 0) {
     return { ok: false, error: "XP reward must be zero or a positive number." };
+  }
+
+  if (xpReward > INPUT_LIMITS.xpAmount) {
+    return {
+      ok: false,
+      error: `XP reward must be ${INPUT_LIMITS.xpAmount.toLocaleString()} or less.`,
+    };
   }
 
   let endsAt: Date | null = null;

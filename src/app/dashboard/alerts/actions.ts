@@ -11,6 +11,7 @@ import {
 } from "@/lib/streams/build-alert-message";
 import { sendChannelMessage } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
+import { INPUT_LIMITS } from "@/lib/validation/limits";
 
 /**
  * Stream alert configuration actions.
@@ -92,6 +93,27 @@ export async function saveAlertSettingsAction(
     }
   }
 
+  const customMessage = String(formData.get("customMessage") ?? "").trim();
+  const watchButtonLabel = String(
+    formData.get("watchButtonLabel") ?? "",
+  ).trim();
+
+  if (customMessage.length > INPUT_LIMITS.customMessage) {
+    return {
+      ok: false,
+      error: `Custom message must be ${INPUT_LIMITS.customMessage.toLocaleString()} characters or fewer.`,
+    };
+  }
+
+  // Discord rejects the whole message when the label is too long, which would
+  // leave the creator with a rule that silently never posts.
+  if (watchButtonLabel.length > INPUT_LIMITS.buttonLabel) {
+    return {
+      ok: false,
+      error: `Button label must be ${INPUT_LIMITS.buttonLabel} characters or fewer (Discord's limit).`,
+    };
+  }
+
   const settings = {
     enabled: readBoolean(formData.get("enabled")),
     channelId: channelId || null,
@@ -101,15 +123,14 @@ export async function saveAlertSettingsAction(
       String(formData.get("messageMode") ?? "DEFAULT") === "CUSTOM"
         ? AlertMessageMode.CUSTOM
         : AlertMessageMode.DEFAULT,
-    customMessage: String(formData.get("customMessage") ?? "").trim() || null,
+    customMessage: customMessage || null,
     embedEnabled: readBoolean(formData.get("embedEnabled")),
     embedColor,
     showThumbnail: readBoolean(formData.get("showThumbnail")),
     showViewerCount: readBoolean(formData.get("showViewerCount")),
     showGame: readBoolean(formData.get("showGame")),
     watchButtonEnabled: readBoolean(formData.get("watchButtonEnabled")),
-    watchButtonLabel:
-      String(formData.get("watchButtonLabel") ?? "").trim() || "Watch Now",
+    watchButtonLabel: watchButtonLabel || "Watch Now",
   };
 
   await prisma.alertConfiguration.upsert({
@@ -183,6 +204,7 @@ export async function sendTestAlertAction(
     content: message.content,
     embeds: message.embeds,
     components: message.components,
+    allowedMentions: message.allowedMentions,
   });
 
   if (!result.ok) {

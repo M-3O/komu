@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db";
 import { listGuildRoles } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
 import { SUPPORTED_METRICS, UNAVAILABLE_METRICS } from "@/lib/roles/evaluate-rules";
+import { INPUT_LIMITS } from "@/lib/validation/limits";
 
 /**
  * Role rule CRUD.
@@ -44,6 +45,12 @@ export async function createRoleRuleAction(
   const roleId = String(formData.get("roleId") ?? "");
 
   if (!name) return { ok: false, error: "Give the rule a name." };
+  if (name.length > INPUT_LIMITS.name) {
+    return {
+      ok: false,
+      error: `Name must be ${INPUT_LIMITS.name} characters or fewer.`,
+    };
+  }
   if (!isSupportedMetric(metric)) {
     return {
       ok: false,
@@ -56,6 +63,13 @@ export async function createRoleRuleAction(
 
   if (!Number.isFinite(threshold) || threshold < 0) {
     return { ok: false, error: "Threshold must be zero or a positive number." };
+  }
+
+  if (threshold > INPUT_LIMITS.threshold) {
+    return {
+      ok: false,
+      error: `Threshold must be ${INPUT_LIMITS.threshold.toLocaleString()} or less.`,
+    };
   }
 
   const roles = await listGuildRoles(guild.discordId);

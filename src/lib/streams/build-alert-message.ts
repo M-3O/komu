@@ -1,6 +1,10 @@
 import "server-only";
 
-import type { DiscordActionRow, DiscordEmbed } from "@/lib/discord/rest";
+import type {
+  DiscordActionRow,
+  DiscordEmbed,
+  SendMessageInput,
+} from "@/lib/discord/rest";
 import type { AlertMessageMode } from "@prisma/client";
 import type { StreamInfo } from "@/lib/streams/types";
 
@@ -42,6 +46,11 @@ export interface BuiltAlertMessage {
   content?: string;
   embeds?: DiscordEmbed[];
   components?: DiscordActionRow[];
+  /**
+   * Always set on a real message: the configured role is the only mention an
+   * alert may ping. See `defuseMentions` for why the text is also rewritten.
+   */
+  allowedMentions?: SendMessageInput["allowedMentions"];
   /** Set when the message cannot be sent, e.g. no channel chosen. */
   error?: string;
 }
@@ -75,13 +84,49 @@ export function buildMentionContent(settings: AlertSettings): string {
   return `<@&${settings.mentionRoleId}>`;
 }
 
+/**
+ * Defuse a mass mention in creator-supplied text.
+ *
+ * `customMessage` is stored verbatim and rendered into message content, where
+ * Discord turns `@everyone` and `@here` into a notification for the whole
+ * server. A creator who can edit the dashboard is trusted, but the text is
+ * also the one place a compromised session or a pasted template could ping
+ * thousands of people on every stream. A zero-width space keeps the text
+ * readable while making the mention inert; the configured role mention is
+ * emitted separately and is the only mention the send allows.
+ */
+export function defuseMentions(value: string): string {
+  return value.replace(/@(everyone|here)\b/gi, "@\u200b$1");
+}
+
+/**
+ * The only mentions an alert may ping.
+ *
+ * An empty `parse` list means Discord will not scan the content for
+ * `@everyone`/`@here` at all. The configured role is named explicitly so the
+ * "mention a role" feature still works.
+ */
+export function buildAllowedMentions(
+  settings: AlertSettings,
+): NonNullable<SendMessageInput["allowedMentions"]> {
+  return {
+    parse: [],
+    roles:
+      settings.mentionEnabled && settings.mentionRoleId
+        ? [settings.mentionRoleId]
+        : [],
+  };
+}
+
 /** The embed body, honouring the creator's visibility toggles. */
 export function buildEmbed(input: AlertMessageInput): DiscordEmbed {
   const { stream, settings, creatorName, isTest } = input;
 
   const description =
     settings.messageMode === "CUSTOM" && settings.customMessage
-      ? applyPlaceholders(settings.customMessage, stream, creatorName)
+      ? defuseMentions(
+          applyPlaceholders(settings.customMessage, stream, creatorName),
+        )
       : stream.title ?? `${creatorName} is live.`;
 
   const fields: DiscordEmbed["fields"] = [];
@@ -124,8 +169,10 @@ export function buildEmbed(input: AlertMessageInput): DiscordEmbed {
 /** The Watch Now button. */
 export function buildWatchButton(settings: AlertSettings): DiscordActionRow {
   // A blank or whitespace label would render as an empty button, so fall
-  // back rather than trusting the stored value.
-  const label = settings.watchButtonLabel.trim();
+  // back rather than trusting the stored value. Truncated because a value
+  // saved before the dashboard enforced Discord's limit would otherwise make
+  // the whole alert fail to send.
+  const label = settings.watchButtonLabel.trim().slice(0, 80);
 
   return {
     type: 1,
@@ -151,7 +198,9 @@ export function buildAlertMessage(
     return { error: "Choose a Discord channel first." };
   }
 
-  const message: BuiltAlertMessage = {};
+  const message: BuiltAlertMessage = {
+    allowedMentions: buildAllowedMentions(settings),
+  };
 
   const content = buildMentionContent(settings);
   if (content) message.content = content;
@@ -160,7 +209,12 @@ export function buildAlertMessage(
     message.embeds = [buildEmbed(input)];
   } else if (settings.messageMode === "CUSTOM" && settings.customMessage) {
     // Without an embed the custom text has to go somewhere visible.
-    message.content = [content, applyPlaceholders(settings.customMessage, stream, input.creatorName)]
+    message.content = [
+      content,
+      defuseMentions(
+        applyPlaceholders(settings.customMessage, stream, input.creatorName),
+      ),
+    ]
       .filter(Boolean)
       .join("\n");
   }

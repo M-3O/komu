@@ -242,6 +242,17 @@ export interface SendMessageInput {
   content?: string;
   embeds?: DiscordEmbed[];
   components?: DiscordActionRow[];
+  /**
+   * Which mentions Discord may turn into notifications.
+   *
+   * Omitted means "everything the content names", so a caller that includes
+   * creator-supplied text must set this explicitly.
+   */
+  allowedMentions?: {
+    parse?: Array<"roles" | "users" | "everyone">;
+    roles?: string[];
+    users?: string[];
+  };
 }
 
 /**
@@ -257,7 +268,15 @@ export async function sendChannelMessage(
   const result = await discordRequest<{ id: string }>(
     "POST",
     `/channels/${channelId}/messages`,
-    input,
+    {
+      content: input.content,
+      embeds: input.embeds,
+      components: input.components,
+      // Discord's wire format is snake_case; the TypeScript API stays
+      // camelCase. Dropping this field would silently allow every mention in
+      // the content, so it is mapped explicitly rather than passed through.
+      allowed_mentions: input.allowedMentions,
+    },
   );
 
   if (!result.ok) return result.result;

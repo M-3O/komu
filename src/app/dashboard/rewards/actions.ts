@@ -9,6 +9,7 @@ import { listGuildRoles } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
 import { AVAILABLE_METRICS, UNAVAILABLE_METRICS } from "@/lib/progression/metrics";
 import { CONFIGURABLE_ACTION_TYPES } from "@/lib/rewards/action-types";
+import { INPUT_LIMITS } from "@/lib/validation/limits";
 
 /**
  * Reward CRUD (PRD section 7.8).
@@ -65,6 +66,19 @@ export async function createRewardAction(
   const achievementId = String(formData.get("achievementId") ?? "");
 
   if (!name) return { ok: false, error: "Give the reward a name." };
+  if (name.length > INPUT_LIMITS.name) {
+    return {
+      ok: false,
+      error: `Name must be ${INPUT_LIMITS.name} characters or fewer.`,
+    };
+  }
+
+  if (description.length > INPUT_LIMITS.description) {
+    return {
+      ok: false,
+      error: `Description must be ${INPUT_LIMITS.description} characters or fewer.`,
+    };
+  }
 
   if (!isAvailableMetric(metric)) {
     return {
@@ -79,6 +93,13 @@ export async function createRewardAction(
 
   if (!Number.isFinite(threshold) || threshold < 0) {
     return { ok: false, error: "Threshold must be zero or a positive number." };
+  }
+
+  if (threshold > INPUT_LIMITS.threshold) {
+    return {
+      ok: false,
+      error: `Threshold must be ${INPUT_LIMITS.threshold.toLocaleString()} or less.`,
+    };
   }
 
   if (!isConfigurableAction(actionType)) {
@@ -139,6 +160,12 @@ async function buildAction(input: {
 
       if (amount === null || amount === 0) {
         return { error: "Enter how much XP to give." };
+      }
+
+      if (amount > INPUT_LIMITS.xpAmount) {
+        return {
+          error: `XP amount must be ${INPUT_LIMITS.xpAmount.toLocaleString()} or less.`,
+        };
       }
 
       return { data: { type: RewardActionType.GIVE_XP, xpAmount: amount } };
