@@ -34,7 +34,13 @@ export default defineConfig({
     // A shared database means these cannot run in parallel without one test's
     // cleanup deleting another's rows.
     fileParallelism: false,
-    testTimeout: 30_000,
+    // These run against a remote Neon pooler, not a local database. A single
+    // test does several dozen round trips, and the pooler occasionally takes
+    // seconds just to hand out a connection after idling. At 30s that showed
+    // up as a test failing once and then passing on every rerun, which reads
+    // as a real bug and costs an investigation to disprove. The generous
+    // timeout only costs anything when something is already wrong.
+    testTimeout: 60_000,
   },
   resolve: {
     alias: {
