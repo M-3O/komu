@@ -971,9 +971,11 @@ server sends you to `/setup` with an explanation rather than a dashboard.
 
 ## Development status
 
-Phases 0 to 14 are done, including 4b, along with the integration half of
-Phase 15. What remains is the manual test pass in Phase 15, which needs a real
-Discord server.
+Phases 0 to 15 are done, including 4b. The Phase 15 manual pass was completed
+on 24 October 2026 against a live Discord server: OAuth sign-in, bot login,
+command registration, `/warn` and `/warnings`, a dashboard test alert, and XP
+accrual with its cooldown. A real stream alert still waits on the connected
+channel going live.
 
 | Phase | Scope                                       | Status |
 | ----- | ------------------------------------------- | ------ |
@@ -995,7 +997,7 @@ Discord server.
 | 13    | Analytics                                   | Done   |
 | 14    | Dashboard polish                            | Done   |
 | 15    | Testing (integration suite)                 | Done   |
-| 15    | Testing (manual, needs a live server)       | Todo   |
+| 15    | Testing (manual, needs a live server)       | Done   |
 
 ### Known gaps in V1
 
@@ -1017,11 +1019,11 @@ Discord server.
 - **YouTube polling is quota-bound.** Every poll costs 101 units against a
   default 10,000 per day, so the interval must be five minutes or longer. This
   is YouTube's pricing, not a Komu limit.
-- **Nothing is verified against a live Discord server.** The OAuth round trip,
-  bot login, alert delivery, the 14 slash commands and the YouTube and Kick API
-  calls all need real credentials. What is verified is the logic behind them,
-  against the live database. Phase 15's manual test pass is still outstanding
-  for this reason.
+- **Live-stream alerts and the non-admin `/setup` refusal are not yet
+  observed end to end.** The manual pass covered sign-in, bot login, command
+  registration, moderation, the dashboard test alert and XP accrual. A real
+  stream alert needs the connected channel to go live, and the refusal path
+  needs a second Discord account without `Administrator`.
 - **`awardXp` returns rather than throws for an unknown member id.** It now
   logs an error with the guild, member id, source and reason, which is what
   makes a wrong-id bug diagnosable. It still returns `{ awarded: 0 }` rather
@@ -1041,7 +1043,16 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
   than `connection()`: under Cache Components, `io()` is the documented way
   to keep a clock read out of the static shell.
 - The OAuth `state` value is compared in constant time, so another site
-  cannot feed the callback a forged authorization code.
+  cannot feed the callback a forged authorization code. PKCE (S256) is used
+  as well; the verifier lives only in the short-lived state cookie, so an
+  intercepted code cannot be exchanged without it.
+- Signing out revokes the Discord grant, clears the stored access token, and
+  bumps the user's `sessionVersion`. Tokens signed before that moment stop
+  working on their next use, including a copy taken from the browser, instead
+  of waiting for the seven-day expiry.
+- The session cookie uses the `__Host-` prefix and is always `Secure`, so a
+  sibling subdomain cannot overwrite it. Browsers treat localhost as a secure
+  origin, so `npm run dev` still works; a LAN address over plain HTTP does not.
 - Signing out is POST-only, so a third-party page cannot force a sign-out.
 - `proxy.ts` redirects signed-out visitors to the login page, but it is only
   a convenience. Each data function and server action re-checks the session,
@@ -1073,6 +1084,12 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
   the `x-poll-secret` header on a POST; the endpoint refuses query-string
   secrets because those end up in access logs, and rate-limits repeated
   failures from one address.
+- Login, callback and logout are rate-limited per client address with a small
+  in-process limiter, which matches a single-instance self-hosted app.
+- Responses carry a Content-Security-Policy, HSTS, frame denial, `nosniff`,
+  and referrer and permissions policies. Every server action bounds its
+  free-text and numeric fields, and alert text defuses `@everyone`/`@here`
+  while allowing only the configured role mention.
 
 ## Bot permissions
 
