@@ -98,6 +98,28 @@ const reason = (interaction: ChatInputCommandInteraction) =>
   interaction.options.getString("reason")?.trim() || "No reason given";
 
 /**
+ * Tell the caller why a moderation command stopped.
+ *
+ * Every handler defers before calling `prepare`, because fetching the target
+ * member can take longer than Discord's three-second window for an initial
+ * response. A plain `reply()` after a defer throws ("The reply to this
+ * interaction has already been sent or deferred"), so the real refusal was
+ * replaced by the generic failure text. Editing is the only valid follow-up
+ * once the interaction has been acknowledged.
+ */
+async function refuse(
+  interaction: ChatInputCommandInteraction,
+  message: string,
+): Promise<void> {
+  if (interaction.deferred || interaction.replied) {
+    await fail(interaction, message);
+    return;
+  }
+
+  await interaction.reply({ content: message });
+}
+
+/**
  * Everything every command needs before acting.
  *
  * Returns null when the command should stop, having already told the caller
@@ -113,12 +135,12 @@ async function prepare(
   guildId: string;
 } | null> {
   if (!interaction.inGuild() || !interaction.guild || !interaction.guildId) {
-    await interaction.reply("This command only works inside a server.");
+    await refuse(interaction, "This command only works inside a server.");
     return null;
   }
 
   if (!isGuildAdmin(interaction)) {
-    await interaction.reply("You need the Administrator permission to moderate.");
+    await refuse(interaction, "You need the Administrator permission to moderate.");
     return null;
   }
 
@@ -129,14 +151,14 @@ async function prepare(
   const botMember = interaction.guild.members.me;
 
   if (!botMember) {
-    await interaction.reply("I could not read my own role in this server.");
+    await refuse(interaction, "I could not read my own role in this server.");
     return null;
   }
 
   const discordMember = await interaction.guild.members.fetch(target.id).catch(() => null);
 
   if (!discordMember) {
-    await interaction.reply(`${target.username} is not in this server.`);
+    await refuse(interaction, `${target.username} is not in this server.`);
     return null;
   }
 
@@ -150,7 +172,7 @@ async function prepare(
   });
 
   if (!dbGuild) {
-    await interaction.reply("This server is not connected to Komu.");
+    await refuse(interaction, "This server is not connected to Komu.");
     return null;
   }
 
@@ -168,7 +190,8 @@ async function prepare(
   });
 
   if (!dbMember) {
-    await interaction.reply(
+    await refuse(
+      interaction,
       `I have no record of ${target.username}. Have them send a message so I can start tracking them.`,
     );
     return null;
