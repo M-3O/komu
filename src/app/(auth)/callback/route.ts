@@ -73,7 +73,6 @@ export async function GET(request: Request) {
       tokenExpiresAt: token.expires_in
         ? new Date(Date.now() + token.expires_in * 1000)
         : null,
-      isGuildAdmin: adminGuilds.length > 0,
     });
 
     await createSession({
@@ -168,7 +167,6 @@ async function upsertDiscordAccount(input: {
   avatarHash: string | null;
   accessToken: string;
   tokenExpiresAt: Date | null;
-  isGuildAdmin: boolean;
 }): Promise<{ userId: string; discordId: string }> {
   const details = {
     username: input.username,
@@ -176,7 +174,6 @@ async function upsertDiscordAccount(input: {
     // Already encrypted by the caller.
     accessToken: input.accessToken,
     tokenExpiresAt: input.tokenExpiresAt,
-    isGuildAdmin: input.isGuildAdmin,
   };
 
   const account = await prisma.discordAccount.upsert({

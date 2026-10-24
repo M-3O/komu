@@ -35,9 +35,9 @@ export default function RootError({
         it keeps happening, the server logs will have the details.
       </p>
 
-      {error.message ? (
-        <p className="max-w-md rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-3 font-mono text-xs">
-          {error.message}
+      {error.digest ? (
+        <p className="max-w-md text-xs text-[color:var(--color-komu-muted)]">
+          Reference: <span className="font-mono">{error.digest}</span>
         </p>
       ) : null}
 

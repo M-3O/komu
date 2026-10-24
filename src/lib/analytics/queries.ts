@@ -3,6 +3,7 @@ import "server-only";
 import { XPSource } from "@prisma/client";
 import { io } from "next/cache";
 
+import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import {
   bucketEvents,
@@ -62,6 +63,8 @@ export async function getAnalytics(
   range: AnalyticsRange,
   now?: Date,
 ): Promise<AnalyticsReport> {
+  await requireCurrentUser();
+
   // The clock read is declared as an IO operation first, so it stays out of the
   // static shell. `io()` takes no arguments: under Cache Components a bare
   // `new Date()` in a prerendered tree is an unstable value, which fails the

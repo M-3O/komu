@@ -12,24 +12,52 @@ import { z } from "zod";
  * just to compile a page.
  */
 
+const MIN_AUTH_SECRET_LENGTH = 32;
+
 const schema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 
   /// Signs the session cookie. Generate with:
   ///   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-  AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
+  AUTH_SECRET: z
+    .string()
+    .min(
+      MIN_AUTH_SECRET_LENGTH,
+      `AUTH_SECRET must be at least ${MIN_AUTH_SECRET_LENGTH} characters`,
+    ),
 
   DISCORD_CLIENT_ID: z.string().min(1),
   DISCORD_CLIENT_SECRET: z.string().min(1),
   DISCORD_BOT_TOKEN: z.string().min(1),
 
-  NEXT_PUBLIC_APP_URL: z
+  // Required in production. The default exists only so a fresh checkout can
+  // sign in on localhost; carrying it into production would send Discord's
+  // OAuth redirect to the developer's machine.
+  NEXT_PUBLIC_APP_URL: z.preprocess(
+    (value) => {
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+
+      return process.env.NODE_ENV === "production"
+        ? undefined
+        : "http://localhost:3000";
+    },
+    z.string().url("NEXT_PUBLIC_APP_URL must be a valid URL"),
+  ),
+
+  // Optional external trigger secret. The route enforces the same floor at
+  // request time; listing it here keeps the requirement visible and rejects
+  // a short value during preflight validation.
+  STREAM_POLL_SECRET: z
     .string()
-    .url()
-    .default("http://localhost:3000"),
+    .min(32, "STREAM_POLL_SECRET must be at least 32 characters")
+    .optional(),
 
   // Streaming providers are optional in V1: a creator may connect only
-  // Twitch, for example.
+  // Twitch, for example. Each client reads its own variables lazily, so a
+  // server without a provider still starts; these entries keep every
+  // accepted key visible in one place.
   TWITCH_CLIENT_ID: z.string().optional(),
   TWITCH_CLIENT_SECRET: z.string().optional(),
   // Only the client id, which doubles as the Data API key. Google issues a
@@ -70,11 +98,12 @@ export function getServerConfig(): ServerConfig {
  *
  * Read leniently rather than through `getServerConfig`, so a missing secret
  * on a fresh checkout produces a helpful login screen instead of a crash on
- * every request.
+ * every request. The length floor still applies: a one-character secret is
+ * treated as unset rather than used as an HMAC key.
  */
 export function getAuthSecret(): string | null {
   const value = process.env.AUTH_SECRET;
-  return value && value.length > 0 ? value : null;
+  return value && value.length >= MIN_AUTH_SECRET_LENGTH ? value : null;
 }
 
 /**

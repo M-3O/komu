@@ -43,12 +43,6 @@ export default function DashboardError({
           failing, check the server logs.
         </p>
 
-        {error.message ? (
-          <p className="mt-3 rounded-md bg-[color:var(--color-komu-surface)] p-3 font-mono text-xs">
-            {error.message}
-          </p>
-        ) : null}
-
         {error.digest ? (
           <p className="mt-2 text-xs text-[color:var(--color-komu-muted)]">
             Reference: <span className="font-mono">{error.digest}</span>

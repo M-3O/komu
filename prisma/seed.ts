@@ -41,12 +41,11 @@ async function main() {
 
   const admin = await prisma.discordAccount.upsert({
     where: { discordId: TEST_ADMIN_DISCORD_ID },
-    update: { isGuildAdmin: true, userId: user.id },
+    update: { userId: user.id },
     create: {
       userId: user.id,
       discordId: TEST_ADMIN_DISCORD_ID,
       username: "testadmin",
-      isGuildAdmin: true,
     },
   });
 

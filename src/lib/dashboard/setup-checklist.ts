@@ -1,5 +1,6 @@
 import "server-only";
 
+import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 
 /**
@@ -32,6 +33,8 @@ export interface SetupChecklist {
 }
 
 export async function getSetupChecklist(): Promise<SetupChecklist> {
+  await requireCurrentUser();
+
   const guild = await prisma.guild.findFirst({
     orderBy: { createdAt: "asc" },
     select: {

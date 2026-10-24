@@ -187,9 +187,6 @@ model DiscordAccount {
   accessToken    String?
   tokenExpiresAt DateTime?
 
-  /// Set when the user has verified they can administer the guild.
-  isGuildAdmin Boolean @default(false)
-
   @@map("discord_accounts")
 }
 
@@ -379,6 +376,7 @@ model Stream {
   attendance StreamAttendance[]
 
   @@unique([streamingAccountId, providerStreamId])
+  @@index([streamingAccountId, startedAt])
   @@index([guildId, startedAt])
   @@index([guildId, endedAt])
   /// Looked up on every reaction to an alert message.
@@ -470,6 +468,7 @@ model XPTransaction {
   reason String?
 
   @@index([memberId, createdAt])
+  @@index([guildId, createdAt])
   @@index([guildId, source, createdAt])
   @@map("xp_transactions")
 }

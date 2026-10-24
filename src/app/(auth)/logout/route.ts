@@ -10,7 +10,7 @@ import { destroySession } from "@/lib/auth/session";
  *
  * POST /logout
  */
-export async function POST(request: Request) {
+export async function POST() {
   await destroySession();
-  redirect(new URL("/", request.url).toString());
+  redirect("/");
 }

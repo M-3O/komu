@@ -1,8 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getSetupChecklist } from "@/lib/dashboard/setup-checklist";
 import { prisma } from "@/lib/db";
 import { fakeDiscordId, requireGuild } from "@/test/integration-helpers";
+
+// The checklist now enforces its own auth boundary, like every other data
+// function. These tests exercise the database query, not the session, so the
+// boundary is satisfied with a fixed user.
+vi.mock("@/lib/auth/current-user", () => ({
+  requireCurrentUser: vi.fn(async () => ({
+    userId: "integration-test",
+    discordId: "0",
+    username: "integration-test",
+    avatarUrl: null,
+  })),
+}));
 
 /**
  * The checklist must only report what is actually working.
