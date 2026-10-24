@@ -5,6 +5,7 @@ import { createLogger } from "@/lib/logger";
 import { manageableGuilds } from "./discord-permissions";
 import { fetchDiscordGuilds } from "./discord-oauth";
 import { getSession, requireSession } from "./session";
+import { decryptToken } from "./token-crypto";
 
 /**
  * The signed-in dashboard user.
@@ -85,8 +86,19 @@ export async function getManageableGuilds(
     return [];
   }
 
+  const accessToken = decryptToken(account.accessToken);
+
+  if (!accessToken) {
+    // Written under a different AUTH_SECRET, or tampered with. Only a fresh
+    // sign-in can fix it, and an empty list is the honest answer meanwhile.
+    log.error("Stored Discord token could not be decrypted; sign-in required", {
+      userId,
+    });
+    return [];
+  }
+
   try {
-    const guilds = await fetchDiscordGuilds(account.accessToken);
+    const guilds = await fetchDiscordGuilds(accessToken);
     return manageableGuilds(guilds).map((guild) => ({
       id: guild.id,
       name: guild.name,
@@ -122,7 +134,16 @@ export async function verifyGuildAccess(
 
   if (!account?.accessToken) return null;
 
-  const guilds = await fetchDiscordGuilds(account.accessToken);
+  const accessToken = decryptToken(account.accessToken);
+
+  if (!accessToken) {
+    log.error("Stored Discord token could not be decrypted; sign-in required", {
+      userId,
+    });
+    return null;
+  }
+
+  const guilds = await fetchDiscordGuilds(accessToken);
   const match = manageableGuilds(guilds).find(
     (guild) => guild.id === guildDiscordId,
   );

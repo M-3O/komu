@@ -163,16 +163,20 @@ Pick one. Setting both means overlapping passes.
 **External cron** (recommended for hosted deployments):
 
 ```bash
-curl -H "x-poll-secret: $STREAM_POLL_SECRET" \
+curl -X POST -H "x-poll-secret: $STREAM_POLL_SECRET" \
   https://your-app.example/api/internal/poll-streams
 ```
 
 **In-process timer** (self-hosted). Set `STREAM_POLL_INTERVAL_SECS=60` and
 restart. Leave it empty otherwise, so the app never polls on its own.
 
-The endpoint refuses to run when `STREAM_POLL_SECRET` is unset, and compares
-the secret in constant time. Without that, anyone who found the URL could
-use your bot to send messages.
+The endpoint refuses to run when `STREAM_POLL_SECRET` is unset or shorter
+than 32 characters, compares the secret in constant time, and accepts it in
+the `x-poll-secret` header only. It is a POST because a pass posts real
+messages: a GET that mutates can be triggered by any page that embeds the URL
+as an image, and may be cached by a proxy. A `?secret=` query parameter is
+rejected on purpose, since query strings are recorded in access logs and
+shell history. Repeated failures from one address are answered with 429.
 
 A plain timer is not reliable on platforms that freeze idle instances. That
 is why the endpoint exists as an alternative, and why the interval is opt-in.
@@ -1058,8 +1062,17 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 - The alert settings form verifies the chosen channel and role against the
   guild's real channel and role list before saving, so a tampered form
   cannot point alerts at another server's channel.
+- Discord access tokens are encrypted with AES-256-GCM before they reach the
+  database, using a key derived from `AUTH_SECRET` with a separate info string
+  from the session signer. A token stored before this existed is read as
+  plaintext once and rewritten encrypted at the next sign-in. Rotating
+  `AUTH_SECRET` therefore invalidates stored tokens: affected users sign in
+  again instead of staying silently broken.
 - `STREAM_POLL_SECRET` protects the polling endpoint, which can post to
-  Discord on your behalf.
+  Discord on your behalf. It must be at least 32 characters and travels in
+  the `x-poll-secret` header on a POST; the endpoint refuses query-string
+  secrets because those end up in access logs, and rate-limits repeated
+  failures from one address.
 
 ## Bot permissions
 

@@ -129,6 +129,10 @@ export async function grantEligibleRewards(
       // the history unreadable.
       progressValue: metricValue(reward.conditionMetric, stats),
       manualByDiscordId: input.manualByDiscordId,
+      // One-shot automatic grants claim a unique key so a concurrent
+      // evaluation cannot pay out twice. Manual grants are a deliberate
+      // repeat, and repeatable rewards are meant to repeat.
+      oneShot: !reward.repeatable && input.manualByDiscordId === undefined,
     });
 
     if (outcome.ok) {
@@ -139,6 +143,10 @@ export async function grantEligibleRewards(
         reward: reward.name,
         manual: Boolean(input.manualByDiscordId),
       });
+    } else if (outcome.alreadyGranted) {
+      // A concurrent evaluation claimed it first. The member ends up with the
+      // reward either way, so this is a skip, not a failure.
+      result.skipped += 1;
     } else {
       result.failed.push({ reward: reward.name, reason: outcome.error });
       log.warn("Reward grant failed", {
@@ -159,7 +167,9 @@ export async function grantEligibleRewards(
  * A union rather than `{ ok, error? }`, so a failure always carries a
  * reason and callers never have to handle a half-populated result.
  */
-type GrantOutcome = { ok: true } | { ok: false; error: string };
+type GrantOutcome =
+  | { ok: true }
+  | { ok: false; error: string; alreadyGranted?: boolean };
 
 /**
  * Run one reward's actions and record the grant.
@@ -176,7 +186,39 @@ async function grantReward(input: {
   rewardName: string;
   progressValue: number;
   manualByDiscordId?: string;
+  oneShot: boolean;
 }): Promise<GrantOutcome> {
+  // Claim the grant before running any action.
+  //
+  // Eligibility was decided from a snapshot taken before this call: two
+  // concurrent evaluations both saw "not granted", and if both reached the
+  // actions the member would receive the XP, the role and the achievement
+  // twice. The row is the claim, so the loser stops here. `skipDuplicates`
+  // turns the collision into count = 0 rather than an exception.
+  //
+  // The row is kept even when an action fails below. That is deliberate: a
+  // role the bot cannot assign must not cause the same reward to be retried
+  // on every message.
+  const claimed = await prisma.rewardGrant.createMany({
+    data: [
+      {
+        guildId: input.guildId,
+        rewardId: input.rewardId,
+        memberId: input.memberRowId,
+        progressValue: input.progressValue,
+        manualGrantedByDiscordId: input.manualByDiscordId,
+        dedupeKey: input.oneShot
+          ? `${input.rewardId}:${input.memberRowId}`
+          : null,
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  if (claimed.count === 0) {
+    return { ok: false, error: "Already granted.", alreadyGranted: true };
+  }
+
   const actions = await prisma.rewardAction.findMany({
     where: { rewardId: input.rewardId },
     select: {
@@ -195,16 +237,6 @@ async function grantReward(input: {
     const outcome = await runAction(action, input);
     if (!outcome.ok) failures.push(outcome.error);
   }
-
-  await prisma.rewardGrant.create({
-    data: {
-      guildId: input.guildId,
-      rewardId: input.rewardId,
-      memberId: input.memberRowId,
-      progressValue: input.progressValue,
-      manualGrantedByDiscordId: input.manualByDiscordId,
-    },
-  });
 
   if (failures.length > 0) {
     return { ok: false, error: failures.join("; ") };

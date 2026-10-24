@@ -176,6 +176,10 @@ model DiscordAccount {
 
   /// OAuth access token from the Discord login.
   ///
+  /// Encrypted with AES-256-GCM by `lib/auth/token-crypto.ts` before it is
+  /// written. A value without the `v1:` prefix predates that change and is
+  /// read as plaintext until the next sign-in rewrites it.
+  ///
   /// Stored so the dashboard can re-read the user's guild list and
   /// re-verify administrator permissions server-side, rather than trusting
   /// anything the browser sends. Never expose this to the client
@@ -318,8 +322,11 @@ model StreamingAccount {
   displayName    String?
   avatarUrl      String?
 
-  /// Tokens are stored encrypted-at-rest by the database provider. Never
-  /// expose these to the browser (PRD section 11).
+  /// Unused in V1: streaming providers are read with application
+  /// credentials, so no per-creator token is written. If one ever is, encrypt
+  /// it first (see `lib/auth/token-crypto.ts`); a plain column is not
+  /// "encrypted at rest" merely because the host offers disk encryption.
+  /// Never expose these to the browser (PRD section 11).
   accessToken  String?
   refreshToken String?
   tokenExpiresAt DateTime?
@@ -590,6 +597,16 @@ model RewardGrant {
   progressValue Int
   /// Set when a moderator granted this manually rather than automatically.
   manualGrantedByDiscordId String?
+
+  /// Claim key for one-shot automatic grants: `<rewardId>:<memberId>`.
+  ///
+  /// A plain unique constraint on (rewardId, memberId) would make repeatable
+  /// rewards impossible. This column is set only for a one-shot automatic
+  /// grant, and Postgres treats NULLs as distinct, so repeatable rewards and
+  /// manual re-grants can still add rows. Its purpose is the insert that
+  /// happens *before* a reward's actions run: a concurrent second grant
+  /// collides here instead of paying out twice.
+  dedupeKey String? @unique
 
   @@index([rewardId, memberId])
   @@index([guildId, createdAt])

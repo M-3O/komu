@@ -140,12 +140,31 @@ async function prepare(
     return null;
   }
 
+  // Resolve the tenant from the guild the command was used in, never from the
+  // member alone: `discordId` is unique only per guild, so a member-only
+  // lookup can return another server's row and hand its id to the moderation
+  // helpers as the authoritative tenant key.
+  const dbGuild = await prisma.guild.findFirst({
+    where: { discordId: interaction.guildId },
+    select: { id: true },
+  });
+
+  if (!dbGuild) {
+    await interaction.reply("This server is not connected to Komu.");
+    return null;
+  }
+
   // The action record is keyed by the member row, which exists only once
   // Komu has seen the member. `/setup` explains the Message Content intent
   // for anyone stuck here.
-  const dbMember = await prisma.guildMember.findFirst({
-    where: { discordId: discordMember.id },
-    select: { id: true, guild: { select: { id: true } } },
+  const dbMember = await prisma.guildMember.findUnique({
+    where: {
+      guildId_discordId: {
+        guildId: dbGuild.id,
+        discordId: discordMember.id,
+      },
+    },
+    select: { id: true },
   });
 
   if (!dbMember) {
@@ -159,7 +178,7 @@ async function prepare(
     discordMember,
     botMember,
     memberId: dbMember.id,
-    guildId: dbMember.guild.id,
+    guildId: dbGuild.id,
   };
 }
 

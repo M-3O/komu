@@ -80,6 +80,20 @@ export async function awardXp(input: AwardXpInput): Promise<AwardXpResult> {
   }
 
   return prisma.$transaction(async (tx) => {
+    // Serialise every award for this member.
+    //
+    // The body below is read-then-write: it reads `xp`, computes a new total,
+    // and writes it back. Under Postgres's default READ COMMITTED two
+    // concurrent awards both read the same total and both write the same
+    // result, while both insert their own transaction row. The rows and the
+    // cached total then disagree permanently.
+    //
+    // A row lock costs one indexed statement and makes the second award wait
+    // for the first, so it reads the total that was actually committed. A
+    // serializable transaction would also work but needs retry handling for
+    // P2034, which is more machinery for the same guarantee.
+    await tx.$queryRaw`SELECT id FROM guild_members WHERE id = ${input.memberId} FOR UPDATE`;
+
     const member = await tx.guildMember.findUnique({
       where: { id: input.memberId },
       select: {
@@ -216,6 +230,13 @@ export async function awardXp(input: AwardXpInput): Promise<AwardXpResult> {
           ? "Reduced to stay within the daily cap."
           : undefined,
     };
+  }, {
+    // Awards for one member queue on the row lock above, which is the point.
+    // Prisma's two-second default for *starting* a transaction is short
+    // enough that a remote database rejects the third waiter instead of
+    // letting it take its turn, so the queue needs room to exist.
+    maxWait: 10_000,
+    timeout: 15_000,
   });
 }
 

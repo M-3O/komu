@@ -242,25 +242,68 @@ export async function handleMessageActivity(
     },
   });
 
-  if (!eligibility.eligible) {
+  // Everything except the cooldown is decidable from the snapshot above.
+  if (!eligibility.eligible && eligibility.reason !== "ON_COOLDOWN") {
     return { recorded: true, denial: eligibility.reason };
   }
 
-  const result = await awardXp({
-    guildId: input.guildId,
-    memberId: member.id,
-    amount: guild.xpMessageAmount,
-    source: XPSource.MESSAGE,
-    reason: "Message activity",
+  // The cooldown in that snapshot is the lie: two messages arriving together
+  // both read the same `lastXpMessageAt`, both pass, and both award. The
+  // conditional update below is what decides. It matches only when the member
+  // is genuinely outside the window, so of any number of concurrent messages
+  // exactly one can claim it.
+  const claimedAt = new Date();
+  const cutoff = new Date(
+    claimedAt.getTime() - guild.xpMessageCooldownSecs * 1000,
+  );
+
+  const claimed = await prisma.guildMember.updateMany({
+    where: {
+      id: member.id,
+      OR: [
+        { lastXpMessageAt: null },
+        { lastXpMessageAt: { lte: cutoff } },
+      ],
+    },
+    data: { lastXpMessageAt: claimedAt },
   });
 
-  // Only stamp the cooldown when XP was actually granted, so a denied
-  // message does not push the next eligible one further out.
-  if (result.awarded > 0) {
-    await prisma.guildMember.update({
-      where: { id: member.id },
-      data: { lastXpMessageAt: new Date() },
+  if (claimed.count === 0) {
+    return { recorded: true, denial: "ON_COOLDOWN" };
+  }
+
+  /**
+   * Hand the window back.
+   *
+   * The claim is written before the award because the conditional update is
+   * the only atomic point available. When nothing is ultimately awarded — the
+   * daily cap, a member row that vanished, an award that threw — the window
+   * must not stay consumed. The timestamp guard keeps this from clearing a
+   * newer message's claim.
+   */
+  const releaseClaim = () =>
+    prisma.guildMember.updateMany({
+      where: { id: member.id, lastXpMessageAt: claimedAt },
+      data: { lastXpMessageAt: member.lastXpMessageAt },
     });
+
+  let result: AwardXpResult;
+
+  try {
+    result = await awardXp({
+      guildId: input.guildId,
+      memberId: member.id,
+      amount: guild.xpMessageAmount,
+      source: XPSource.MESSAGE,
+      reason: "Message activity",
+    });
+  } catch (error) {
+    await releaseClaim();
+    throw error;
+  }
+
+  if (result.awarded === 0) {
+    await releaseClaim();
   }
 
   if (result.note) {

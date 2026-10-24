@@ -1,11 +1,13 @@
 import {
   ChatInputCommandInteraction,
   EmbedBuilder,
+  MessageFlags,
   SlashCommandBuilder,
 } from "discord.js";
 
 import { prisma } from "@/lib/db";
 import { KOMU_ALERT_COLOR, KOMU_COLOR, KOMU_SUCCESS_COLOR } from "../constants";
+import { isGuildAdmin } from "../permissions";
 
 /** `/setup` — reports whether Komu is configured for this server. */
 export const setupCommand = new SlashCommandBuilder()
@@ -33,7 +35,18 @@ export const REQUIRED_BOT_PERMISSIONS = [
 export async function handleSetup(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
-  await interaction.deferReply();
+  // Setup reports provider usernames and the bot's permission state, so it is
+  // an admin command like the moderation ones. Without this, any member of any
+  // server the bot is in could enumerate the installation.
+  if (!isGuildAdmin(interaction)) {
+    await interaction.reply({
+      content: "You need the Administrator permission to check setup.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const guild = await prisma.guild.findFirst({
     orderBy: { createdAt: "asc" },
@@ -70,7 +83,9 @@ export async function handleSetup(
           .setColor(KOMU_ALERT_COLOR)
           .setTitle("Wrong server")
           .setDescription(
-            `This installation is configured for **${guild.name}**, not this server.`,
+            // Deliberately no server name: the reader is an admin of some
+            // other guild, and the configured server is not theirs to know.
+            "This installation is configured for a different server.",
           ),
       ],
     });

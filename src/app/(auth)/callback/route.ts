@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/discord-oauth";
 import { manageableGuilds } from "@/lib/auth/discord-permissions";
 import { createSession, SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import { encryptToken } from "@/lib/auth/token-crypto";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 
@@ -66,7 +67,12 @@ export async function GET(request: Request) {
       discordId: discordUser.id,
       username: discordUser.username,
       avatarHash: discordUser.avatar,
-      accessToken: token.access_token,
+      // Encrypted before it reaches the row. Doing it here rather than in a
+      // Prisma extension keeps the one write path obvious.
+      accessToken: encryptToken(token.access_token),
+      tokenExpiresAt: token.expires_in
+        ? new Date(Date.now() + token.expires_in * 1000)
+        : null,
       isGuildAdmin: adminGuilds.length > 0,
     });
 
@@ -161,12 +167,15 @@ async function upsertDiscordAccount(input: {
   username: string;
   avatarHash: string | null;
   accessToken: string;
+  tokenExpiresAt: Date | null;
   isGuildAdmin: boolean;
 }): Promise<{ userId: string; discordId: string }> {
   const details = {
     username: input.username,
     avatarHash: input.avatarHash,
+    // Already encrypted by the caller.
     accessToken: input.accessToken,
+    tokenExpiresAt: input.tokenExpiresAt,
     isGuildAdmin: input.isGuildAdmin,
   };
 
