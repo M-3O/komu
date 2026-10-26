@@ -50,13 +50,13 @@ export class YouTubeApiError extends Error {
 }
 
 function getApiKey(): string {
-  // The client id doubles as the API key: Google issues both together, and the
-  // key is what the Data API authenticates with.
-  const key = process.env.YOUTUBE_CLIENT_ID;
+  // A plain API key, not an OAuth client id: the lookups read public data, so
+  // there is no user grant involved and no client secret to use.
+  const key = process.env.YOUTUBE_API_KEY;
 
   if (!key) {
     throw new YouTubeApiError(
-      "YouTube is not configured. Add YOUTUBE_CLIENT_ID to .env.local.",
+      "YouTube is not configured. Add YOUTUBE_API_KEY to .env.local.",
       undefined,
       "NOT_CONFIGURED",
     );

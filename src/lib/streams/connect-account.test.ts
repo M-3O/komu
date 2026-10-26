@@ -58,7 +58,7 @@ describe("connectStreamingAccount", () => {
     getAccountMock.mockRejectedValue(
       Object.assign(
         new Error(
-          "YouTube is not configured. Add YOUTUBE_CLIENT_ID to .env.local.",
+          "YouTube is not configured. Add YOUTUBE_API_KEY to .env.local.",
         ),
         { code: "NOT_CONFIGURED" },
       ),
@@ -72,7 +72,7 @@ describe("connectStreamingAccount", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "YouTube is not configured. Add YOUTUBE_CLIENT_ID to .env.local.",
+      error: "YouTube is not configured. Add YOUTUBE_API_KEY to .env.local.",
     });
   });
 

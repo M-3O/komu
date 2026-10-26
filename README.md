@@ -120,10 +120,12 @@ Accepted for each provider:
 
 ### YouTube setup
 
-Create OAuth credentials in the Google Cloud Console, enable the **YouTube Data
-API v3**, and set `YOUTUBE_CLIENT_ID`. The client id doubles as the API key.
-Google also issues a client secret, but a public API key needs no OAuth flow, so
-there is nowhere for a secret to be used and Komu does not ask for one.
+In the Google Cloud Console, create (or pick) a project and enable the
+**YouTube Data API v3**. Then create an **API key** under
+*APIs & Services → Credentials* and set `YOUTUBE_API_KEY`. This is the `AIza...`
+API key, not an OAuth client id: channel lookups read public data, so no Google
+account grant is involved and there is no client secret to store. Restrict the
+key to the YouTube Data API so it cannot be used elsewhere.
 
 **Read the quota note below before setting a poll interval.** Checking whether
 a YouTube channel is live costs 101 quota units per poll.
