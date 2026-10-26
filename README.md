@@ -174,9 +174,20 @@ curl -X POST -H "x-poll-secret: $STREAM_POLL_SECRET" \
   https://your-app.example/api/internal/poll-streams
 ```
 
-**In-process timer** (self-hosted). Set `STREAM_POLL_INTERVAL_SECS=1800` when
-YouTube is connected (see the quota note), or `60` for Twitch and Kick only.
-Restart. Leave it empty otherwise, so the app never polls on its own.
+**In-process timers** (self-hosted). Set both to poll every provider
+automatically:
+
+```bash
+STREAM_POLL_INTERVAL_SECS=1800      # YouTube (quota-safe)
+STREAM_POLL_FAST_INTERVAL_SECS=60   # Twitch and Kick
+```
+
+The slow interval belongs to YouTube. The fast interval belongs to Twitch and
+Kick, so those alerts can arrive within a minute without burning YouTube's
+quota. If the fast interval is unset, the slow interval falls back to checking
+every provider, which is the original single-timer behaviour. If only the fast
+interval is set, YouTube is not polled. Restart after changing either value.
+Leave both empty otherwise, so the app never polls on its own.
 
 The endpoint refuses to run when `STREAM_POLL_SECRET` is unset or shorter
 than 32 characters, compares the secret in constant time, and accepts it in
@@ -274,7 +285,9 @@ bundle, which would stop the bot from starting.
 
 Rules of the form "when a member reaches X, give them @Role" are configured
 on `/dashboard/roles`. Roles come from Discord, so you pick from real
-options.
+options. A rule can be edited in place — its dashboard label, signal,
+threshold (including the XP total), and assigned role — without deleting it or
+losing roles already granted.
 
 Thresholds are evaluated in `lib/roles/evaluate-rules.ts`, pure functions with
 23 tests covering every metric and the no-repeat requirement.
@@ -282,11 +295,11 @@ Thresholds are evaluated in `lib/roles/evaluate-rules.ts`, pure functions with
 **Idempotency** uses the member's *live* Discord role list, not a cached
 database copy. That is what stops the bot re-adding a role after a restart.
 
-**Available metrics**: Level reached, Total XP, Messages sent, Days in
-server. Watch time and stream attendance are deliberately not offered — the
-plan says to add a watch-time rule only when the required data exists, and
-V1 collects neither. The dashboard lists them as unavailable rather than
-offering a rule that could never fire.
+**Available metrics**: Level reached, Total XP, Messages sent, Streams
+attended, and Days in server. Watch time is deliberately not offered — the
+plan says to add a watch-time rule only when the required data exists, and V1
+does not collect minutes watched. The dashboard lists it as unavailable
+rather than offering a rule that could never fire.
 
 ### When rules are checked
 
@@ -707,9 +720,9 @@ units and leaves no dashboard headroom. Five minutes costs about 29,000 units a
 day and needs a 100,000-unit quota. A creator watching for the instant a stream
 goes live should use Twitch or Kick instead.
 
-`STREAM_POLL_INTERVAL_SECS` is global, so a long interval slows Twitch and Kick
-alerts too. That is the price of YouTube's `search.list`, not a per-provider
-setting.
+With `STREAM_POLL_FAST_INTERVAL_SECS=60`, Twitch and Kick alerts do not inherit
+that long interval. Without it, `STREAM_POLL_INTERVAL_SECS` covers every
+provider, so the YouTube-safe interval also slows Twitch and Kick.
 
 A missed poll is not a missed alert: the next successful poll still reports the
 stream as live, so a longer interval delays the alert rather than losing it.

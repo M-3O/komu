@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, Radio, Route } from "lucide-react";
+import Image from "next/image";
 import { useState } from "react";
 
 import {
@@ -102,8 +103,14 @@ export function AlertsWorkspace({
           >
             <div className="rounded-xl bg-[#313338] p-3.5 text-[#dbdee1] shadow-inner">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 font-display text-xs font-bold text-white">
-                  K
+                <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#050505] ring-1 ring-white/10">
+                  <Image
+                    src="/brand/komu-logo.webp"
+                    alt=""
+                    width={64}
+                    height={64}
+                    className="h-full w-full object-cover"
+                  />
                 </span>
                 <div>
                   <p className="flex items-center gap-1.5 text-xs font-semibold text-white">

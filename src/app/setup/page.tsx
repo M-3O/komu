@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Suspense } from "react";
 
 import { requireCurrentUser, getManageableGuilds } from "@/lib/auth/current-user";
@@ -20,6 +21,23 @@ export default function SetupPage() {
   return (
     <main className="flex min-h-screen justify-center px-6 py-16">
       <div className="w-full max-w-lg">
+        <div className="mb-8 flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500 via-violet-500 to-fuchsia-500 p-px shadow-[0_0_24px_-6px_rgba(99,102,241,.8)]">
+            <span className="flex h-full w-full overflow-hidden rounded-full bg-[#050505]">
+              <Image
+                src="/brand/komu-logo.webp"
+                alt=""
+                width={64}
+                height={64}
+                className="h-full w-full object-cover"
+              />
+            </span>
+          </span>
+          <span className="font-display text-lg font-bold tracking-[-0.03em]">
+            Komu
+          </span>
+        </div>
+
         <h1 className="text-2xl font-bold tracking-tight">Connect your server</h1>
         <p className="mt-2 text-sm text-[color:var(--color-komu-muted)]">
           Choose the Discord server Komu should manage. You need to be the

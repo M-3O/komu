@@ -7,7 +7,7 @@ import { runStreamDetectionCycle } from "@/lib/streams/poller";
  * Run one stream detection pass.
  *
  * The polling mechanism is isolated in `lib/streams/poller.ts`; this is only
- * a trigger. Point an external cron at it, or set `STREAM_POLL_INTERVAL_SECS`
+ * a trigger. Point an external cron at it, or set the two in-process intervals
  * to let the app poll itself (see `instrumentation.ts`).
  *
  *   POST /api/internal/poll-streams

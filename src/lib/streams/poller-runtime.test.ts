@@ -1,3 +1,4 @@
+import { StreamingProvider } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { runStreamDetectionCycle } = vi.hoisted(() => ({
@@ -88,5 +89,61 @@ describe("stream poller", () => {
     // Two intervals would mean two passes per tick: four calls, not two.
     await vi.advanceTimersByTimeAsync(2_000);
     expect(runStreamDetectionCycle).toHaveBeenCalledTimes(2);
+  });
+
+  it("polls separate provider groups on independent timers", async () => {
+    const pending: Array<(value: typeof QUIET_CYCLE) => void> = [];
+
+    runStreamDetectionCycle.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    );
+
+    startStreamPoller(1_000, {
+      key: "fast",
+      providers: [StreamingProvider.TWITCH, StreamingProvider.KICK],
+    });
+    startStreamPoller(2_000, {
+      key: "youtube",
+      providers: [StreamingProvider.YOUTUBE],
+    });
+
+    // A slow cycle in one group must not suppress the other group's first
+    // tick. Both promises are intentionally unresolved here.
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(runStreamDetectionCycle).toHaveBeenCalledTimes(2);
+    expect(runStreamDetectionCycle.mock.calls[0]?.[0]).toEqual([
+      StreamingProvider.TWITCH,
+      StreamingProvider.KICK,
+    ]);
+    expect(runStreamDetectionCycle.mock.calls[1]?.[0]).toEqual([
+      StreamingProvider.YOUTUBE,
+    ]);
+
+    for (const resolve of pending) resolve(QUIET_CYCLE);
+  });
+
+  it("stops only the named poller when one is given", async () => {
+    runStreamDetectionCycle.mockResolvedValue(QUIET_CYCLE);
+
+    startStreamPoller(1_000, {
+      key: "fast",
+      providers: [StreamingProvider.TWITCH],
+    });
+    startStreamPoller(1_000, {
+      key: "youtube",
+      providers: [StreamingProvider.YOUTUBE],
+    });
+
+    stopStreamPoller("fast");
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(runStreamDetectionCycle).toHaveBeenCalledTimes(1);
+    expect(runStreamDetectionCycle.mock.calls[0]?.[0]).toEqual([
+      StreamingProvider.YOUTUBE,
+    ]);
   });
 });

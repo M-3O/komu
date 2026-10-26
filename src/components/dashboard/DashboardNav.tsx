@@ -14,11 +14,11 @@ import {
   Megaphone,
   Menu,
   Shield,
-  Sparkles,
   Swords,
   TrendingUp,
   X,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -86,8 +86,16 @@ function Drawer({ pathname }: { pathname: string }) {
             onClick={() => setOpen(false)}
             className="flex items-center gap-2.5"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_0_22px_-6px_rgba(99,102,241,.8)]">
-              <Sparkles className="h-4 w-4" strokeWidth={2.2} />
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 p-px shadow-[0_0_22px_-6px_rgba(99,102,241,.8)]">
+              <span className="flex h-full w-full overflow-hidden rounded-[7px] bg-[#050505]">
+                <Image
+                  src="/brand/komu-logo.webp"
+                  alt=""
+                  width={64}
+                  height={64}
+                  className="h-full w-full object-cover"
+                />
+              </span>
             </span>
             <span className="font-display text-lg font-bold tracking-[-0.03em] text-[color:var(--color-komu-text)]">
               Komu

@@ -1,7 +1,7 @@
 "use client";
 
-import { BadgeCheck, Plus, Settings2 } from "lucide-react";
-import { useActionState } from "react";
+import { BadgeCheck, Pencil, Plus, Settings2 } from "lucide-react";
+import { useActionState, useEffect, useState } from "react";
 
 import {
   Badge,
@@ -12,10 +12,12 @@ import {
   cn,
 } from "@/components/dashboard/ui";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
+import { INPUT_LIMITS } from "@/lib/validation/limits";
 import {
   createRoleRuleAction,
   deleteRoleRuleAction,
   toggleRoleRuleAction,
+  updateRoleRuleAction,
   type RoleFormState,
 } from "./actions";
 
@@ -37,6 +39,7 @@ interface RuleRow {
   name: string;
   metric: string;
   threshold: number;
+  roleId: string;
   roleName: string;
   enabled: boolean;
 }
@@ -45,10 +48,12 @@ const METRIC_LABELS: Record<string, string> = {
   LEVEL: "Level reached",
   XP: "Total XP reached",
   MESSAGE_COUNT: "Messages sent",
+  STREAM_ATTENDANCE: "Streams attended",
+  WATCH_TIME_HOURS: "Hours watched",
   MEMBER_AGE_DAYS: "Days in server",
 };
 
-/** Create a rule, and list the existing ones with enable and delete. */
+/** Create a rule, and list, edit, pause or delete the existing ones. */
 export function RoleRuleManager({
   roles,
   rules,
@@ -62,6 +67,7 @@ export function RoleRuleManager({
     createRoleRuleAction,
     INITIAL_ROLE_STATE,
   );
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const active = rules.filter((rule) => rule.enabled).length;
 
@@ -69,7 +75,7 @@ export function RoleRuleManager({
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
       <Panel
         title="Automation rules"
-        description="Every rule is checked when a member chats or joins."
+        description="Every rule is checked when a member chats or joins. Edit a name, signal or threshold without recreating it."
         icon={BadgeCheck}
         action={<Badge tone={active > 0 ? "success" : "neutral"}>{active} active</Badge>}
       >
@@ -124,7 +130,20 @@ export function RoleRuleManager({
                     </p>
                   </div>
 
-                  <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
+                  <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingId((current) =>
+                          current === rule.id ? null : rule.id,
+                        )
+                      }
+                      aria-expanded={editingId === rule.id}
+                      className="komu-btn komu-btn-secondary min-h-8 px-2.5 py-1 text-[11px]"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      {editingId === rule.id ? "Close" : "Edit"}
+                    </button>
                     <form action={toggleRoleRuleAction.bind(null, rule.id)}>
                       <button type="submit" className="komu-btn komu-btn-secondary min-h-8 px-2.5 py-1 text-[11px]">
                         {rule.enabled ? "Pause" : "Enable"}
@@ -138,6 +157,16 @@ export function RoleRuleManager({
                     />
                   </div>
                 </div>
+
+                {editingId === rule.id ? (
+                  <EditRuleForm
+                    key={rule.id}
+                    rule={rule}
+                    roles={roles}
+                    availableMetrics={availableMetrics}
+                    onClose={() => setEditingId(null)}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
@@ -157,54 +186,10 @@ export function RoleRuleManager({
           icon={Plus}
         >
           <form action={formAction} className="flex flex-col gap-3">
-            <FormField label="Rule name" hint="A label for the dashboard.">
-              <input
-                name="name"
-                required
-                placeholder="Veteran"
-                className="komu-input"
-              />
-            </FormField>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="Signal">
-                <select
-                  name="metric"
-                  defaultValue={availableMetrics[0]}
-                  className="komu-input"
-                >
-                  {availableMetrics.map((metric) => (
-                    <option key={metric} value={metric}>
-                      {METRIC_LABELS[metric] ?? metric}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="Threshold">
-                <input
-                  name="threshold"
-                  type="number"
-                  min={0}
-                  defaultValue={10}
-                  required
-                  className="komu-input"
-                />
-              </FormField>
-            </div>
-
-            <FormField label="Give role" hint="The role must sit below the bot's highest role.">
-              <select name="roleId" required defaultValue="" className="komu-input">
-                <option value="" disabled>
-                  Choose a role
-                </option>
-                {roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+            <RuleFields
+              roles={roles}
+              availableMetrics={availableMetrics}
+            />
 
             <button
               type="submit"
@@ -227,5 +212,159 @@ export function RoleRuleManager({
         </Panel>
       </div>
     </div>
+  );
+}
+
+/**
+ * Shared fields for creating and editing.
+ *
+ * A rule can be renamed, its XP threshold (or other signal) changed, and its
+ * assigned role swapped. All of it goes through the same server-side
+ * validation as creation, so "the streamer can change anything" does not mean
+ * "the browser can post anything".
+ */
+function RuleFields({
+  roles,
+  availableMetrics,
+  defaults,
+}: {
+  roles: RoleOption[];
+  availableMetrics: string[];
+  defaults?: RuleRow;
+}) {
+  const currentRoleMissing =
+    defaults !== undefined &&
+    !roles.some((role) => role.id === defaults.roleId);
+
+  return (
+    <>
+      <FormField
+        label="Rule name"
+        hint="A dashboard label. The Discord role name stays as it is in Discord."
+      >
+        <input
+          name="name"
+          required
+          maxLength={INPUT_LIMITS.name}
+          defaultValue={defaults?.name}
+          placeholder="Veteran"
+          className="komu-input"
+        />
+      </FormField>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Signal">
+          <select
+            name="metric"
+            defaultValue={defaults?.metric ?? availableMetrics[0]}
+            className="komu-input"
+          >
+            {availableMetrics.map((metric) => (
+              <option key={metric} value={metric}>
+                {METRIC_LABELS[metric] ?? metric}
+              </option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormField
+          label="Threshold"
+          hint="For Total XP, use the lifetime XP total."
+        >
+          <input
+            name="threshold"
+            type="number"
+            min={0}
+            max={INPUT_LIMITS.threshold}
+            defaultValue={defaults?.threshold ?? 10}
+            required
+            className="komu-input"
+          />
+        </FormField>
+      </div>
+
+      <FormField
+        label="Give role"
+        hint="The role must sit below the bot's highest role."
+      >
+        <select
+          name="roleId"
+          required
+          defaultValue={defaults?.roleId ?? ""}
+          className="komu-input"
+        >
+          <option value="" disabled>
+            Choose a role
+          </option>
+          {currentRoleMissing && defaults ? (
+            <option value={defaults.roleId} disabled>
+              @{defaults.roleName} (not available in Discord)
+            </option>
+          ) : null}
+          {roles.map((role) => (
+            <option key={role.id} value={role.id}>
+              {role.label}
+            </option>
+          ))}
+        </select>
+      </FormField>
+    </>
+  );
+}
+
+function EditRuleForm({
+  rule,
+  roles,
+  availableMetrics,
+  onClose,
+}: {
+  rule: RuleRow;
+  roles: RoleOption[];
+  availableMetrics: string[];
+  onClose: () => void;
+}) {
+  const [state, formAction, pending] = useActionState<RoleFormState, FormData>(
+    updateRoleRuleAction,
+    INITIAL_ROLE_STATE,
+  );
+
+  useEffect(() => {
+    if (state?.ok) onClose();
+  }, [state?.ok, onClose]);
+
+  return (
+    <form
+      action={formAction}
+      className="mt-3 flex flex-col gap-3 rounded-lg border border-[color:var(--color-komu-border-muted)] bg-[color:var(--color-komu-bg-deep)]/60 p-3"
+    >
+      <input type="hidden" name="ruleId" value={rule.id} />
+
+      <RuleFields
+        roles={roles}
+        availableMetrics={availableMetrics}
+        defaults={rule}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="komu-btn komu-btn-primary min-h-8 px-3 py-1 text-[11px]"
+        >
+          {pending ? "Saving…" : "Save changes"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="komu-btn komu-btn-secondary min-h-8 px-3 py-1 text-[11px]"
+        >
+          Cancel
+        </button>
+      </div>
+
+      {state?.error ? (
+        <StatusMessage tone="error">{state.error}</StatusMessage>
+      ) : null}
+    </form>
   );
 }

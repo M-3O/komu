@@ -33,12 +33,28 @@ function isSupportedMetric(value: string): value is ProgressionMetric {
   return SUPPORTED_METRICS.includes(value as ProgressionMetric);
 }
 
-export async function createRoleRuleAction(
-  _previous: RoleFormState,
-  formData: FormData,
-): Promise<RoleFormState> {
-  const guild = await requireGuild("/dashboard/roles");
+interface RoleRuleFields {
+  name: string;
+  metric: ProgressionMetric;
+  threshold: number;
+  role: { id: string; name: string };
+}
 
+type ParsedRoleRule =
+  | { ok: true; fields: RoleRuleFields }
+  | { ok: false; error: string };
+
+/**
+ * Validate everything a create or edit submitted.
+ *
+ * Keeping one reader means the two forms cannot drift: an edit cannot bypass
+ * the @everyone check or accept a role that is not in this server just
+ * because the create path is stricter.
+ */
+async function readRoleRuleFields(
+  guild: { discordId: string },
+  formData: FormData,
+): Promise<ParsedRoleRule> {
   const name = String(formData.get("name") ?? "").trim();
   const metric = String(formData.get("metric") ?? "");
   const thresholdRaw = String(formData.get("threshold") ?? "");
@@ -54,7 +70,9 @@ export async function createRoleRuleAction(
   if (!isSupportedMetric(metric)) {
     return {
       ok: false,
-      error: UNAVAILABLE_METRICS[metric as ProgressionMetric] ?? "That metric is not available yet.",
+      error:
+        UNAVAILABLE_METRICS[metric as ProgressionMetric] ??
+        "That metric is not available yet.",
     };
   }
   if (!roleId) return { ok: false, error: "Choose a Discord role." };
@@ -84,8 +102,30 @@ export async function createRoleRuleAction(
     return { ok: false, error: "You cannot assign the @everyone role." };
   }
 
+  return {
+    ok: true,
+    fields: {
+      name,
+      metric,
+      threshold,
+      role: { id: role.id, name: role.name },
+    },
+  };
+}
+
+export async function createRoleRuleAction(
+  _previous: RoleFormState,
+  formData: FormData,
+): Promise<RoleFormState> {
+  const guild = await requireGuild("/dashboard/roles");
+  const parsed = await readRoleRuleFields(guild, formData);
+
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const { name, metric, threshold, role } = parsed.fields;
+
   const existing = await prisma.roleRule.findFirst({
-    where: { guildId: guild.id, roleId },
+    where: { guildId: guild.id, roleId: role.id },
     select: { id: true },
   });
 
@@ -108,6 +148,77 @@ export async function createRoleRuleAction(
   });
 
   log.info("Created role rule", { guildId: guild.id, name, metric, threshold });
+
+  refresh();
+
+  return { ok: true };
+}
+
+/**
+ * Edit a rule in place.
+ *
+ * Scoped to the connected server. The rule may not move to a role that
+ * another rule already grants, which mirrors the create path and keeps the
+ * "one rule per role" invariant true even when the browser posts a guessed
+ * rule id.
+ */
+export async function updateRoleRuleAction(
+  _previous: RoleFormState,
+  formData: FormData,
+): Promise<RoleFormState> {
+  const guild = await requireGuild("/dashboard/roles");
+  const ruleId = String(formData.get("ruleId") ?? "");
+
+  const rule = await prisma.roleRule.findFirst({
+    where: { id: ruleId, guildId: guild.id },
+    select: { id: true },
+  });
+
+  if (!rule) {
+    return { ok: false, error: "That rule no longer exists. Reload the page." };
+  }
+
+  const parsed = await readRoleRuleFields(guild, formData);
+
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const { name, metric, threshold, role } = parsed.fields;
+
+  const duplicate = await prisma.roleRule.findFirst({
+    where: {
+      guildId: guild.id,
+      roleId: role.id,
+      NOT: { id: rule.id },
+    },
+    select: { id: true },
+  });
+
+  if (duplicate) {
+    return {
+      ok: false,
+      error: `Another rule already grants @${role.name}. Choose a different role.`,
+    };
+  }
+
+  await prisma.roleRule.update({
+    where: { id: rule.id },
+    data: {
+      name,
+      metric,
+      threshold,
+      roleId: role.id,
+      // Refresh the snapshot so a Discord-side rename is reflected here.
+      roleName: role.name,
+    },
+  });
+
+  log.info("Updated role rule", {
+    guildId: guild.id,
+    ruleId: rule.id,
+    name,
+    metric,
+    threshold,
+  });
 
   refresh();
 

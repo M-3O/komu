@@ -490,6 +490,85 @@ textarea.komu-input {
   background-size: 32px 32px;
 }
 
+/* Sign-in ---------------------------------------------------------------- */
+
+.komu-auth-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.komu-auth-ambient {
+  background: radial-gradient(
+    circle at 50% 35%,
+    rgba(99, 102, 241, 0.18) 0%,
+    rgba(16, 185, 129, 0.08) 35%,
+    transparent 70%
+  );
+}
+
+.komu-auth-radiance {
+  animation: komu-auth-radiance 6s ease-in-out infinite alternate;
+}
+
+.komu-auth-pulse {
+  animation: komu-auth-pulse 6s ease-in-out infinite;
+}
+
+.komu-auth-ring {
+  animation: komu-auth-ring 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.komu-auth-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.komu-auth-sheen::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -150%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    60deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.2) 48%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0.2) 52%,
+    transparent 70%
+  );
+  transform: rotate(25deg);
+  pointer-events: none;
+}
+
+.komu-auth-sheen:hover::after {
+  left: 100%;
+  transition: left 0.75s ease-in-out;
+}
+
+/* Marketing home ---------------------------------------------------------- */
+
+.komu-home-grid {
+  background-image: radial-gradient(
+    rgba(99, 102, 241, 0.12) 1px,
+    transparent 1px
+  );
+  background-size: 32px 32px;
+}
+
+.komu-home-avatar {
+  box-shadow: 0 0 35px -5px rgba(124, 58, 237, 0.4);
+}
+
+.komu-home-glow {
+  box-shadow:
+    0 0 25px -4px rgba(99, 102, 241, 0.45),
+    0 0 50px -10px rgba(139, 92, 246, 0.25);
+}
+
 .komu-avatar {
   display: inline-flex;
   align-items: center;
@@ -517,6 +596,39 @@ textarea.komu-input {
 .komu-scroll-area {
   overflow-y: auto;
 }
+}
+
+@keyframes komu-auth-radiance {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes komu-auth-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes komu-auth-ring {
+  0% {
+    opacity: 0.75;
+    transform: scale(0.96);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

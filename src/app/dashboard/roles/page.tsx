@@ -91,6 +91,7 @@ async function RoleRulesPanel() {
         name: true,
         metric: true,
         threshold: true,
+        roleId: true,
         roleName: true,
         enabled: true,
       },
@@ -125,14 +126,20 @@ async function RoleRulesPanel() {
         <MetricCard
           label="Active rules"
           value={active.toString()}
-          hint={active === rules.length ? "All rules are listening" : `${rules.length - active} paused`}
+          hint={
+            rules.length === 0
+              ? "No rules configured"
+              : active === rules.length
+                ? "All rules are listening"
+                : `${rules.length - active} paused`
+          }
           icon={ShieldCheck}
           tone={active > 0 ? "success" : "neutral"}
         />
         <MetricCard
-          label="Assignable roles"
+          label="Server roles"
           value={roles.length.toString()}
-          hint="Below the bot's highest role"
+          hint="Excluding @everyone"
           icon={Layers}
           tone="violet"
         />
@@ -167,6 +174,7 @@ async function RoleRulesPanel() {
             name: rule.name,
             metric: rule.metric,
             threshold: rule.threshold,
+            roleId: rule.roleId,
             roleName: rule.roleName,
             enabled: rule.enabled,
           }))}

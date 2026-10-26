@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { StreamingProvider } from "@prisma/client";
+
 import { prisma } from "@/lib/db";
 import { sendChannelMessage } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
@@ -53,11 +55,18 @@ interface AlertableChannel {
 /**
  * Run one detection pass.
  *
+ * Pass a provider list to check only those platforms. The in-process timer
+ * uses this to poll Twitch and Kick on a short interval while checking
+ * YouTube less often, because each YouTube lookup spends 101 quota units
+ * against a 10,000/day allowance.
+ *
  * Safe to run concurrently: the `Stream` table has a unique constraint on
  * (streamingAccountId, providerStreamId), so two overlapping passes cannot
  * both create the same session.
  */
-export async function runStreamDetectionCycle(): Promise<CycleResult> {
+export async function runStreamDetectionCycle(
+  providers?: readonly StreamingProvider[],
+): Promise<CycleResult> {
   const result: CycleResult = {
     checked: 0,
     alerted: 0,
@@ -66,7 +75,7 @@ export async function runStreamDetectionCycle(): Promise<CycleResult> {
     unchanged: 0,
   };
 
-  const channels = await loadAlertableChannels();
+  const channels = await loadAlertableChannels(providers);
 
   for (const channel of channels) {
     result.checked += 1;
@@ -238,10 +247,18 @@ async function deliverAlert(
  *
  * Channels without a configured alert channel are still tracked for session
  * history, so a creator who configures alerts later still has past streams.
+ * An empty provider list means every provider, not zero channels.
  */
-async function loadAlertableChannels(): Promise<AlertableChannel[]> {
+async function loadAlertableChannels(
+  providers?: readonly StreamingProvider[],
+): Promise<AlertableChannel[]> {
   const accounts = await prisma.streamingAccount.findMany({
-    where: { disconnectedAt: null },
+    where: {
+      disconnectedAt: null,
+      ...(providers && providers.length > 0
+        ? { provider: { in: [...providers] } }
+        : {}),
+    },
     select: {
       id: true,
       guildId: true,

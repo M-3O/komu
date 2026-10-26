@@ -1,99 +1,152 @@
 import "server-only";
 
+import type { StreamingProvider } from "@prisma/client";
+
 import { createLogger } from "@/lib/logger";
 import { runStreamDetectionCycle } from "./poller";
 
 /**
- * In-process timer for stream detection.
+ * In-process timers for stream detection.
  *
- * Only started when `STREAM_POLL_INTERVAL_SECS` is set. Two passes at once
- * cannot double-alert — that rests on a unique constraint — but they are not
- * free: every pass reads every channel from its provider. A cycle that
- * outlives the interval used to stack: each tick started another pass, so a
- * provider that never answered multiplied the requests, and on YouTube each
- * stacked search spends 101 quota units on a channel that was already being
- * checked.
+ * Twitch and Kick can be checked often. YouTube cannot: one lookup spends 101
+ * quota units against a 10,000/day allowance, so it needs a slow interval.
+ * Each named poller therefore gets its own timer and provider filter.
  *
- * A tick that arrives while the previous one is still running is therefore
- * skipped rather than queued. A queued pass would read the same state the
- * running one is about to act on.
+ * A cycle that outlives its interval must not stack. Each tick starts a pass
+ * only if that poller's previous pass has finished. A queued pass would read
+ * the same state the running one is about to act on, and on YouTube every
+ * stacked lookup spends quota on a channel already being checked.
+ *
+ * Two different pollers may run at once because they cover disjoint
+ * providers. If an external cron also calls the endpoint, the database's
+ * unique constraint still prevents duplicate alerts.
  */
 
 const log = createLogger("stream");
 
-/** Guards against a second interval being registered on hot reload. */
+interface PollerState {
+  timer?: NodeJS.Timeout;
+  boot?: NodeJS.Timeout;
+  inFlight: boolean;
+}
+
+export interface StreamPollerOptions {
+  /**
+   * Names the timer. Starting the same key twice is ignored, which is what
+   * keeps a hot reload from registering a duplicate interval.
+   */
+  key?: string;
+  /**
+   * Platforms this poller covers. Empty or omitted means every provider.
+   */
+  providers?: readonly StreamingProvider[];
+}
+
+/** Guards against duplicate intervals being registered on hot reload. */
 const globalForPoller = globalThis as unknown as {
-  komuStreamPoller?: NodeJS.Timeout;
-  komuStreamPollerBoot?: NodeJS.Timeout;
+  komuStreamPollers?: Map<string, PollerState>;
 };
 
-/** Whether a detection pass is running right now. */
-let inFlight = false;
+function getPollers(): Map<string, PollerState> {
+  if (!globalForPoller.komuStreamPollers) {
+    globalForPoller.komuStreamPollers = new Map();
+  }
 
-export function startStreamPoller(intervalMs: number): void {
-  if (globalForPoller.komuStreamPoller) {
-    log.warn("Stream poller already running; not starting another");
+  return globalForPoller.komuStreamPollers;
+}
+
+export function startStreamPoller(
+  intervalMs: number,
+  options: StreamPollerOptions = {},
+): void {
+  const key = options.key ?? "all";
+  const pollers = getPollers();
+
+  if (pollers.has(key)) {
+    log.warn("Stream poller already running; not starting another", { key });
     return;
   }
 
-  log.info("Stream poller starting", { intervalMs });
+  log.info("Stream poller starting", {
+    key,
+    intervalMs,
+    providers: options.providers?.join(",") ?? "all",
+  });
+
+  const state: PollerState = { inFlight: false };
 
   const tick = async () => {
-    if (inFlight) {
-      log.warn("Skipped a poll: the previous cycle is still running");
+    if (state.inFlight) {
+      log.warn("Skipped a poll: the previous cycle is still running", { key });
       return;
     }
 
-    inFlight = true;
+    state.inFlight = true;
 
     try {
-      const result = await runStreamDetectionCycle();
+      const result = await runStreamDetectionCycle(options.providers);
 
       // Only log when something happened, so an idle server stays quiet.
       if (result.alerted > 0 || result.failed.length > 0) {
-        log.info("Poller cycle", { ...result });
+        log.info("Poller cycle", {
+          key,
+          providers: options.providers?.join(",") ?? "all",
+          ...result,
+        });
       }
     } catch (error) {
       log.error("Poller cycle failed", {
+        key,
         reason: error instanceof Error ? error.message : "unknown",
       });
     } finally {
-      inFlight = false;
+      state.inFlight = false;
     }
   };
 
-  const timer = setInterval(() => void tick(), intervalMs);
+  state.timer = setInterval(() => void tick(), intervalMs);
 
   // Do not hold the process open on shutdown.
-  timer.unref?.();
-
-  globalForPoller.komuStreamPoller = timer;
+  state.timer.unref?.();
 
   // Run once shortly after start so a creator who just configured alerts does
   // not wait a full interval.
-  const bootTimer = setTimeout(() => void tick(), 5_000);
-  bootTimer.unref?.();
+  state.boot = setTimeout(() => void tick(), 5_000);
+  state.boot.unref?.();
 
-  globalForPoller.komuStreamPollerBoot = bootTimer;
+  pollers.set(key, state);
 }
 
 /**
- * Stop the timer and clear the in-flight flag.
+ * Stop one named poller, or every poller when no key is given.
  *
- * Used by tests, and by anything that needs to shut the poller down without
- * exiting the process. Clearing the flag assumes no pass is mid-flight, which
- * is true of both.
+ * Used by tests, and by anything that needs to shut polling down without
+ * exiting the process.
  */
-export function stopStreamPoller(): void {
-  if (globalForPoller.komuStreamPoller) {
-    clearInterval(globalForPoller.komuStreamPoller);
-    delete globalForPoller.komuStreamPoller;
+export function stopStreamPoller(key?: string): void {
+  const pollers = getPollers();
+
+  if (key) {
+    stopPollers(pollers, [key]);
+    return;
   }
 
-  if (globalForPoller.komuStreamPollerBoot) {
-    clearTimeout(globalForPoller.komuStreamPollerBoot);
-    delete globalForPoller.komuStreamPollerBoot;
-  }
+  stopPollers(pollers, [...pollers.keys()]);
+}
 
-  inFlight = false;
+function stopPollers(
+  pollers: Map<string, PollerState>,
+  keys: readonly string[],
+): void {
+  for (const key of keys) {
+    const state = pollers.get(key);
+
+    if (!state) continue;
+
+    if (state.timer) clearInterval(state.timer);
+    if (state.boot) clearTimeout(state.boot);
+
+    state.inFlight = false;
+    pollers.delete(key);
+  }
 }
