@@ -162,7 +162,7 @@ export function ChannelManager({
         <p className="text-xs text-[color:var(--color-komu-muted)]">
           Twitch login, YouTube channel id or @handle, or Kick slug. A profile
           URL works too. YouTube checks use API quota, so keep the poll interval
-          at 300 seconds or more when watching a YouTube channel.
+          at 1800 seconds or more when watching a YouTube channel.
         </p>
 
         {state?.error ? (

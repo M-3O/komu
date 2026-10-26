@@ -170,8 +170,9 @@ curl -X POST -H "x-poll-secret: $STREAM_POLL_SECRET" \
   https://your-app.example/api/internal/poll-streams
 ```
 
-**In-process timer** (self-hosted). Set `STREAM_POLL_INTERVAL_SECS=60` and
-restart. Leave it empty otherwise, so the app never polls on its own.
+**In-process timer** (self-hosted). Set `STREAM_POLL_INTERVAL_SECS=1800` when
+YouTube is connected (see the quota note), or `60` for Twitch and Kick only.
+Restart. Leave it empty otherwise, so the app never polls on its own.
 
 The endpoint refuses to run when `STREAM_POLL_SECRET` is unset or shorter
 than 32 characters, compares the secret in constant time, and accepts it in
@@ -694,10 +695,17 @@ costs 101 units**. The default daily allowance is 10,000, which means a
 60-second poll interval exhausts it in **under two hours** and then YouTube
 stops answering for the rest of the day.
 
-Use **`STREAM_POLL_INTERVAL_SECS=300`** (five minutes) or longer when YouTube is
-connected. Five minutes costs about 29,000 units a day for one channel, so even
-that needs a quota increase on a default project. A creator watching for the
-instant a stream goes live should use Twitch or Kick instead.
+On a default project, use **`STREAM_POLL_INTERVAL_SECS=1800`** (thirty
+minutes): 48 polls a day, about **4,850 units**, which leaves half the allowance
+for the dashboard's own status checks (each one also costs 101). The shortest
+safe interval for polling alone is 900 (fifteen minutes), but that uses 9,700
+units and leaves no dashboard headroom. Five minutes costs about 29,000 units a
+day and needs a 100,000-unit quota. A creator watching for the instant a stream
+goes live should use Twitch or Kick instead.
+
+`STREAM_POLL_INTERVAL_SECS` is global, so a long interval slows Twitch and Kick
+alerts too. That is the price of YouTube's `search.list`, not a per-provider
+setting.
 
 A missed poll is not a missed alert: the next successful poll still reports the
 stream as live, so a longer interval delays the alert rather than losing it.
@@ -1024,8 +1032,9 @@ channel going live.
 - **Moderation commands need `Administrator`.** A server that wants a separate
   Moderator role cannot have one yet.
 - **YouTube polling is quota-bound.** Every poll costs 101 units against a
-  default 10,000 per day, so the interval must be five minutes or longer. This
-  is YouTube's pricing, not a Komu limit.
+  default 10,000 per day, so thirty minutes is the practical interval (fifteen
+  leaves no room for dashboard checks). This is YouTube's pricing, not a Komu
+  limit.
 - **Live-stream alerts and the non-admin `/setup` refusal are not yet
   observed end to end.** The manual pass covered sign-in, bot login, command
   registration, moderation, the dashboard test alert and XP accrual. A real
