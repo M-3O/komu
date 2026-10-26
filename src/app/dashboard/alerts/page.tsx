@@ -1,9 +1,26 @@
+import {
+  Bell,
+  Cable,
+  Hash,
+  MessageSquare,
+  RefreshCw,
+  Send,
+} from "lucide-react";
+import Link from "next/link";
 import { Suspense } from "react";
 
+import {
+  Badge,
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  StatusMessage,
+} from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { listGuildChannels, listGuildRoles } from "@/lib/discord/rest";
-import { AlertForm } from "./AlertForm";
+import { AlertsWorkspace } from "./AlertsWorkspace";
+import type { AlertAccount } from "./types";
 
 export const metadata = { title: "Stream Alerts" };
 
@@ -18,15 +35,26 @@ const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
  */
 export default function AlertsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Stream Alerts</h1>
-        <p className="text-sm text-[color:var(--color-komu-muted)]">
-          Choose where live alerts are posted and how they look.
-        </p>
-      </header>
+    <div className="flex flex-col gap-7">
+      <PageHeader
+        eyebrow="Broadcast automation"
+        title="Stream alerts"
+        description="Choose where live alerts are posted, how they look, and how members get from Discord to the stream."
+        actions={
+          <>
+            <a href="/dashboard/alerts" className="komu-btn komu-btn-secondary">
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </a>
+            <Link href="/dashboard/streams" className="komu-btn komu-btn-primary">
+              <Cable className="h-4 w-4" />
+              Manage channels
+            </Link>
+          </>
+        }
+      />
 
-      <Suspense fallback={<PanelSkeleton />}>
+      <Suspense fallback={<AlertsSkeleton />}>
         <AlertSettingsPanel />
       </Suspense>
     </div>
@@ -43,9 +71,16 @@ async function AlertSettingsPanel() {
 
   if (!guild) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        Connect a Discord server first.
-      </p>
+      <EmptyState
+        icon={Bell}
+        title="Connect a Discord server first"
+        description="Komu needs a server before it can route live alerts."
+        action={
+          <Link href="/setup" className="komu-btn komu-btn-primary">
+            Open setup
+          </Link>
+        }
+      />
     );
   }
 
@@ -63,9 +98,16 @@ async function AlertSettingsPanel() {
 
   if (accounts.length === 0) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        No streaming channels connected yet. Add one on the Channels page.
-      </p>
+      <EmptyState
+        icon={Cable}
+        title="No streaming channels connected"
+        description="Add a Twitch, YouTube, or Kick account before routing alerts."
+        action={
+          <Link href="/dashboard/streams" className="komu-btn komu-btn-primary">
+            Connect a channel
+          </Link>
+        }
+      />
     );
   }
 
@@ -84,61 +126,120 @@ async function AlertSettingsPanel() {
     .filter((role) => role.id !== guild.discordId)
     .map((role) => ({ id: role.id, label: `@${role.name}` }));
 
+  const routed = accounts.filter(
+    (account) => account.alertConfig?.enabled && account.alertConfig.channelId,
+  ).length;
+  const destinations = new Set(
+    accounts
+      .map((account) => account.alertConfig?.channelId)
+      .filter((id): id is string => Boolean(id)),
+  ).size;
+  const mentions = accounts.filter(
+    (account) => account.alertConfig?.mentionEnabled,
+  ).length;
+
+  const workspaceAccounts: AlertAccount[] = accounts.map((account) => {
+    const config = account.alertConfig;
+
+    return {
+      id: account.id,
+      provider: account.provider,
+      username: account.username,
+      displayName: account.displayName,
+      defaults: {
+        enabled: config?.enabled ?? true,
+        channelId: config?.channelId ?? "",
+        mentionRoleId: config?.mentionRoleId ?? "",
+        mentionEnabled: config?.mentionEnabled ?? false,
+        messageMode: config?.messageMode ?? "DEFAULT",
+        customMessage: config?.customMessage ?? "",
+        embedEnabled: config?.embedEnabled ?? true,
+        embedColor: config?.embedColor ?? "#6366f1",
+        showThumbnail: config?.showThumbnail ?? true,
+        showViewerCount: config?.showViewerCount ?? true,
+        showGame: config?.showGame ?? true,
+        watchButtonEnabled: config?.watchButtonEnabled ?? true,
+        watchButtonLabel: config?.watchButtonLabel ?? "Watch Now",
+      },
+    };
+  });
+
   return (
-    <div className="flex flex-col gap-10">
-      {accounts.map((account) => {
-        const config = account.alertConfig;
+    <div className="flex flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Connected creators"
+          value={accounts.length.toString()}
+          hint="Each account has its own dispatch route"
+          icon={Bell}
+          tone="accent"
+        />
+        <MetricCard
+          label="Alerts armed"
+          value={routed.toString()}
+          hint={`${accounts.length - routed} currently silent`}
+          icon={Send}
+          tone={routed === accounts.length ? "success" : "warning"}
+        />
+        <MetricCard
+          label="Dispatch channels"
+          value={destinations.toString()}
+          hint="Unique Discord destinations"
+          icon={Hash}
+          tone="violet"
+        />
+        <MetricCard
+          label="Role mentions"
+          value={mentions.toString()}
+          hint={mentions > 0 ? "Pings enabled on those routes" : "No pings configured"}
+          icon={MessageSquare}
+          tone="neutral"
+        />
+      </div>
 
-        return (
-          <section key={account.id} className="flex flex-col gap-4">
-            <div>
-              <h2 className="font-semibold">
-                {account.displayName ?? account.username}
-              </h2>
-              <p className="text-sm text-[color:var(--color-komu-muted)]">
-                {account.provider} · {account.username}
-              </p>
-            </div>
-
-            {channels.length === 0 ? (
-              <p className="rounded-md border border-[color:var(--color-komu-border)] p-3 text-sm text-[color:var(--color-komu-muted)]">
-                Komu could not read this server&apos;s channels. Check that the
-                bot is in the server and can see them, then reload.
-              </p>
-            ) : (
-              <AlertForm
-                streamingAccountId={account.id}
-                channels={channels}
-                roles={roles}
-                defaults={{
-                  enabled: config?.enabled ?? true,
-                  channelId: config?.channelId ?? "",
-                  mentionRoleId: config?.mentionRoleId ?? "",
-                  mentionEnabled: config?.mentionEnabled ?? false,
-                  messageMode: config?.messageMode ?? "DEFAULT",
-                  customMessage: config?.customMessage ?? "",
-                  embedEnabled: config?.embedEnabled ?? true,
-                  embedColor: config?.embedColor ?? "#7c5cff",
-                  showThumbnail: config?.showThumbnail ?? true,
-                  showViewerCount: config?.showViewerCount ?? true,
-                  showGame: config?.showGame ?? true,
-                  watchButtonEnabled: config?.watchButtonEnabled ?? true,
-                  watchButtonLabel: config?.watchButtonLabel ?? "Watch Now",
-                }}
-              />
-            )}
-          </section>
-        );
-      })}
+      {channels.length === 0 ? (
+        <div className="komu-card p-4">
+          <StatusMessage tone="error">
+            Komu could not read this server&apos;s text channels. Check that the
+            bot is in the server and can see them, then refresh. No route can be
+            saved until a destination is available.
+          </StatusMessage>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge tone="warning">Discord permissions</Badge>
+            <Link
+              href="/dashboard/streams"
+              className="text-xs font-medium text-indigo-300 hover:text-indigo-200"
+            >
+              Check connected channels
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <AlertsWorkspace
+          accounts={workspaceAccounts}
+          channels={channels}
+          roles={roles}
+        />
+      )}
     </div>
   );
 }
 
-function PanelSkeleton() {
+function AlertsSkeleton() {
   return (
-    <div
-      className="h-64 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
-      aria-hidden
-    />
+    <div className="flex flex-col gap-6" aria-hidden>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+        <div className="h-[520px] animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+        <div className="h-80 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+      </div>
+    </div>
   );
 }

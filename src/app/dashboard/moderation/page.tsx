@@ -1,5 +1,14 @@
+import { Activity, BarChart3, Clock, Filter, RefreshCw, Shield } from "lucide-react";
+import Link from "next/link";
 import { Suspense } from "react";
 
+import {
+  Badge,
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  Panel,
+} from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { listGuildChannels } from "@/lib/discord/rest";
@@ -24,16 +33,26 @@ const MAX_LOG_ROWS = 25;
  */
 export default function ModerationPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Moderation</h1>
-        <p className="text-sm text-[color:var(--color-komu-muted)]">
-          Filter messages, slow down spammers, and catch join raids
-          automatically.
-        </p>
-      </header>
+    <div className="flex flex-col gap-7">
+      <PageHeader
+        eyebrow="Trust & safety"
+        title="Moderation & safety"
+        description="Filter messages, slow down spammers, and catch join raids automatically."
+        actions={
+          <>
+            <Link href="/dashboard/analytics" className="komu-btn komu-btn-secondary">
+              <BarChart3 className="h-4 w-4" />
+              Analytics
+            </Link>
+            <a href="/dashboard/moderation" className="komu-btn komu-btn-primary">
+              <RefreshCw className="h-4 w-4" />
+              Refresh channels
+            </a>
+          </>
+        }
+      />
 
-      <Suspense fallback={<PanelSkeleton />}>
+      <Suspense fallback={<ModerationSkeleton />}>
         <ModerationPanel />
       </Suspense>
     </div>
@@ -50,9 +69,16 @@ async function ModerationPanel() {
 
   if (!guild) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        Connect a Discord server first.
-      </p>
+      <EmptyState
+        icon={Shield}
+        title="Connect a Discord server first"
+        description="Moderation rules are scoped to the connected server."
+        action={
+          <Link href="/setup" className="komu-btn komu-btn-primary">
+            Open setup
+          </Link>
+        }
+      />
     );
   }
 
@@ -94,9 +120,43 @@ async function ModerationPanel() {
   ]);
 
   const channelNames = new Map(channels.map((channel) => [channel.id, channel.name]));
+  const active = rules.filter((rule) => rule.enabled).length;
+  const caught = rules.reduce((sum, rule) => sum + rule._count.actions, 0);
+  const logging = rules.filter((rule) => rule.logChannelId).length;
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Safety rules"
+          value={rules.length.toString()}
+          hint="Configured for this server"
+          icon={Shield}
+          tone="accent"
+        />
+        <MetricCard
+          label="Active"
+          value={active.toString()}
+          hint={`${rules.length - active} paused`}
+          icon={Shield}
+          tone={active > 0 ? "success" : "neutral"}
+        />
+        <MetricCard
+          label="Actions caught"
+          value={caught.toLocaleString()}
+          hint="Rule triggers recorded all time"
+          icon={Activity}
+          tone="violet"
+        />
+        <MetricCard
+          label="Log destinations"
+          value={logging.toString()}
+          hint={logging > 0 ? "Rules writing to a channel" : "No rule is logging"}
+          icon={Filter}
+          tone={logging > 0 ? "success" : "warning"}
+        />
+      </div>
+
       <ModerationManager
         rules={rules.map((rule) => ({
           id: rule.id,
@@ -129,25 +189,65 @@ async function ModerationPanel() {
         }))}
       />
 
-      <p className="text-xs text-[color:var(--color-komu-muted)]">
-        Rules are checked on every message and every join. Message rate and join
-        spikes are counted in memory, so they reset when the bot restarts.
-        Automod handles filtering, spam and raid protection; use{" "}
-        <code className="text-[color:var(--color-komu-text)]">/warn</code>,{" "}
-        <code className="text-[color:var(--color-komu-text)]">/timeout</code>,{" "}
-        <code className="text-[color:var(--color-komu-text)]">/kick</code> and{" "}
-        <code className="text-[color:var(--color-komu-text)]">/ban</code> for
-        anything else.
-      </p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel
+          title="How rate limits behave"
+          description="In-memory counters reset with the bot."
+          icon={Clock}
+          action={<Badge tone="warning">Runtime state</Badge>}
+        >
+          <p className="text-xs leading-5 text-[color:var(--color-komu-muted)]">
+            Message rate and join spikes are counted in memory, so they reset
+            when the bot restarts. The rules themselves are stored and resume
+            immediately. A burst in progress at restart starts a fresh window.
+          </p>
+        </Panel>
+
+        <Panel
+          title="Manual moderation"
+          description="For everything a rule should not automate."
+          icon={Shield}
+        >
+          <p className="text-xs leading-5 text-[color:var(--color-komu-muted)]">
+            Automod handles filtering, spam and raid protection. Use{" "}
+            <code className="rounded border border-[color:var(--color-komu-border-muted)] bg-white/[0.03] px-1.5 py-0.5 text-[color:var(--color-komu-text)]">
+              /warn
+            </code>
+            ,{" "}
+            <code className="rounded border border-[color:var(--color-komu-border-muted)] bg-white/[0.03] px-1.5 py-0.5 text-[color:var(--color-komu-text)]">
+              /timeout
+            </code>
+            ,{" "}
+            <code className="rounded border border-[color:var(--color-komu-border-muted)] bg-white/[0.03] px-1.5 py-0.5 text-[color:var(--color-komu-text)]">
+              /kick
+            </code>{" "}
+            and{" "}
+            <code className="rounded border border-[color:var(--color-komu-border-muted)] bg-white/[0.03] px-1.5 py-0.5 text-[color:var(--color-komu-text)]">
+              /ban
+            </code>{" "}
+            for anything else. Those actions appear in the log above.
+          </p>
+        </Panel>
+      </div>
     </div>
   );
 }
 
-function PanelSkeleton() {
+function ModerationSkeleton() {
   return (
-    <div
-      className="h-64 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
-      aria-hidden
-    />
+    <div className="flex flex-col gap-6" aria-hidden>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[1fr_430px]">
+        <div className="h-96 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+        <div className="h-96 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+      </div>
+    </div>
   );
 }

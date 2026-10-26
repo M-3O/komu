@@ -1,5 +1,12 @@
+import { Activity, Cable, Radio, RefreshCw, Route, Tv } from "lucide-react";
+import Link from "next/link";
 import { Suspense } from "react";
 
+import {
+  EmptyState,
+  MetricCard,
+  PageHeader,
+} from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { availableProviders } from "@/lib/streams/registry";
@@ -17,27 +24,33 @@ export const metadata = { title: "Channels" };
  */
 export default function StreamsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Channels</h1>
-        <p className="text-sm text-[color:var(--color-komu-muted)]">
-          Connect the streaming accounts Komu should watch.
-        </p>
-      </header>
+    <div className="flex flex-col gap-7">
+      <PageHeader
+        eyebrow="Pipelines & routing"
+        title="Channels & integrations"
+        description="Connect the streaming accounts Komu should watch, and see which ones are live right now."
+        actions={
+          <>
+            <Link href="/dashboard/alerts" className="komu-btn komu-btn-secondary">
+              <Route className="h-4 w-4" />
+              Alert routing
+            </Link>
+            <a href="/dashboard/streams" className="komu-btn komu-btn-primary">
+              <RefreshCw className="h-4 w-4" />
+              Refresh status
+            </a>
+          </>
+        }
+      />
 
-      <Suspense fallback={<PanelSkeleton />}>
-        <LiveStatusPanel />
-      </Suspense>
-
-      <Suspense fallback={<PanelSkeleton />}>
-        <ChannelPanel />
+      <Suspense fallback={<ChannelsSkeleton />}>
+        <ChannelsWorkspace />
       </Suspense>
     </div>
   );
 }
 
-async function LiveStatusPanel() {
-  // Called for the redirect it performs when signed out, not for its value.
+async function ChannelsWorkspace() {
   await requireCurrentUser("/dashboard/streams");
 
   const guild = await prisma.guild.findFirst({
@@ -47,118 +60,116 @@ async function LiveStatusPanel() {
 
   if (!guild) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        Connect a Discord server first.
-      </p>
+      <EmptyState
+        icon={Cable}
+        title="Connect a Discord server first"
+        description="Komu needs a server before it can watch streaming channels."
+        action={
+          <Link href="/setup" className="komu-btn komu-btn-primary">
+            Open setup
+          </Link>
+        }
+      />
     );
   }
 
-  const statuses = await getLiveStatuses(guild.id);
+  const [statuses, alertRoutes] = await Promise.all([
+    getLiveStatuses(guild.id),
+    prisma.alertConfiguration.findMany({
+      where: { guildId: guild.id, enabled: true, channelId: { not: null } },
+      select: { streamingAccountId: true },
+    }),
+  ]);
+
+  const providers = availableProviders();
+  const live = statuses.filter((status) => status.stream).length;
+  const routeIds = alertRoutes.map((route) => route.streamingAccountId);
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="font-semibold">Live status</h2>
+    <div className="flex flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Connected accounts"
+          value={statuses.length.toString()}
+          hint="Watched every polling cycle"
+          icon={Cable}
+          tone="accent"
+        />
+        <MetricCard
+          label="Live now"
+          value={live.toString()}
+          hint={live > 0 ? "Broadcast signal detected" : "No active broadcasts"}
+          icon={Activity}
+          tone={live > 0 ? "success" : "neutral"}
+        />
+        <MetricCard
+          label="Alert routes"
+          value={routeIds.length.toString()}
+          hint="Enabled and pointed at a Discord channel"
+          icon={Route}
+          tone={routeIds.length > 0 ? "violet" : "warning"}
+        />
+        <MetricCard
+          label="Providers ready"
+          value={`${providers.length} / 3`}
+          hint={providers.length === 0 ? "Add credentials to connect" : "Credentials present"}
+          icon={Tv}
+          tone={providers.length === 3 ? "success" : "warning"}
+        />
+      </div>
 
-      {statuses.length === 0 ? (
-        <p className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-          No channels connected yet.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {statuses.map((status) => (
-            <li
-              key={status.streamingAccountId}
-              className="flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4"
-            >
-              <span
-                aria-hidden
-                className={
-                  status.stream
-                    ? "h-2.5 w-2.5 rounded-full bg-[color:var(--color-komu-live)]"
-                    : "h-2.5 w-2.5 rounded-full bg-[color:var(--color-komu-muted)]"
-                }
-              />
+      <ChannelManager
+        statuses={statuses.map((status) => ({
+          id: status.streamingAccountId,
+          provider: status.provider,
+          username: status.username,
+          displayName: status.displayName,
+          avatarUrl: status.avatarUrl,
+          stream: status.stream
+            ? {
+                title: status.stream.title,
+                game: status.stream.game,
+                thumbnail: status.stream.thumbnail,
+                viewerCount: status.stream.viewerCount,
+                url: status.stream.url,
+                startedAt: status.stream.startedAt?.toISOString() ?? null,
+              }
+            : null,
+          error: status.error,
+        }))}
+        availableProviders={providers}
+        alertRoutes={routeIds}
+      />
 
-              <span className="font-medium">
-                {status.displayName ?? status.username}
-              </span>
-
-              {status.stream ? (
-                <>
-                  <span className="text-xs font-semibold tracking-wider text-[color:var(--color-komu-live)] uppercase">
-                    Live
-                  </span>
-                  <span className="text-sm text-[color:var(--color-komu-muted)]">
-                    {status.stream.title ?? "Untitled stream"}
-                  </span>
-                  {status.stream.game ? (
-                    <span className="text-sm text-[color:var(--color-komu-muted)]">
-                      · {status.stream.game}
-                    </span>
-                  ) : null}
-                  {status.stream.viewerCount !== null ? (
-                    <span className="text-sm text-[color:var(--color-komu-muted)]">
-                      · {status.stream.viewerCount} watching
-                    </span>
-                  ) : null}
-                  <a
-                    href={status.stream.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="ml-auto rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm hover:bg-[color:var(--color-komu-surface-raised)]"
-                  >
-                    Watch
-                  </a>
-                </>
-              ) : status.error ? (
-                <span className="text-sm text-[color:var(--color-komu-muted)]">
-                  {status.error}
-                </span>
-              ) : (
-                <span className="text-sm text-[color:var(--color-komu-muted)]">
-                  Offline
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+      <p className="flex items-start gap-2 text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
+        <Radio className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-300" />
+        Live checks are independent per account. If one provider is unreachable,
+        the others still report their status. A provider error is never shown as
+        offline.
+      </p>
+    </div>
   );
 }
 
-async function ChannelPanel() {
-  await requireCurrentUser("/dashboard/streams");
-
-  const channels = await prisma.streamingAccount.findMany({
-    where: { disconnectedAt: null },
-    select: {
-      id: true,
-      provider: true,
-      username: true,
-      displayName: true,
-    },
-    orderBy: { createdAt: "asc" },
-  });
-
+function ChannelsSkeleton() {
   return (
-    <ChannelManager
-      channels={channels.map((channel) => ({
-        id: channel.id,
-        provider: channel.provider,
-        username: channel.username,
-        displayName: channel.displayName,
-      }))}
-      availableProviders={availableProviders()}
-    />
-  );
-}
-
-function PanelSkeleton() {
-  return (
-    <div
-      className="h-24 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
-      aria-hidden
-    />
+    <div className="flex flex-col gap-6" aria-hidden>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        {[0, 1, 2].map((index) => (
+          <div
+            key={index}
+            className="h-72 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+    </div>
   );
 }

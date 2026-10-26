@@ -1,12 +1,33 @@
 "use client";
 
-import { startTransition, useActionState, useState } from "react";
+import {
+  AtSign,
+  Hash,
+  MessageSquare,
+  MousePointerClick,
+  Radio,
+  Save,
+  Send,
+} from "lucide-react";
+import {
+  startTransition,
+  useActionState,
+  useState,
+  type ChangeEvent,
+} from "react";
 
+import {
+  FormField,
+  Panel,
+  StatusMessage,
+  cn,
+} from "@/components/dashboard/ui";
 import {
   saveAlertSettingsAction,
   sendTestAlertAction,
   type AlertFormState,
 } from "./actions";
+import type { AlertDefaults, ChannelOption } from "./types";
 
 /**
  * Declared here rather than in actions.ts because a "use server" file may only
@@ -14,27 +35,6 @@ import {
  * runtime.
  */
 const INITIAL_STATE: AlertFormState = {};
-
-interface ChannelOption {
-  id: string;
-  label: string;
-}
-
-interface AlertDefaults {
-  enabled: boolean;
-  channelId: string;
-  mentionRoleId: string;
-  mentionEnabled: boolean;
-  messageMode: string;
-  customMessage: string;
-  embedEnabled: boolean;
-  embedColor: string;
-  showThumbnail: boolean;
-  showViewerCount: boolean;
-  showGame: boolean;
-  watchButtonEnabled: boolean;
-  watchButtonLabel: string;
-}
 
 /**
  * Stream alert settings form.
@@ -66,166 +66,193 @@ export function AlertForm({
   const [customMode, setCustomMode] = useState(
     defaults.messageMode === "CUSTOM",
   );
+  const [watchEnabled, setWatchEnabled] = useState(
+    defaults.watchButtonEnabled,
+  );
 
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="streamingAccountId" value={streamingAccountId} />
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-semibold">Where alerts go</h2>
-
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
+      <Panel
+        title="Dispatch routing"
+        description="Where this creator's live signal is announced."
+        icon={Hash}
+      >
+        <div className="flex flex-col gap-3">
+          <ToggleRow
             name="enabled"
+            label="Send alerts for this channel"
+            hint="Turn this off to keep the route configured but silent."
             defaultChecked={defaults.enabled}
-            className="accent-[color:var(--color-komu-accent)]"
           />
-          <span>Send alerts for this channel</span>
-        </label>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-            Discord channel
-          </span>
-          <select
-            name="channelId"
-            defaultValue={defaults.channelId}
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-          >
-            <option value="">Not set</option>
-            {channels.map((channel) => (
-              <option key={channel.id} value={channel.id}>
-                {channel.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField
+              label="Discord channel"
+              hint="The alert is posted here by the Komu app."
+            >
+              <select
+                name="channelId"
+                defaultValue={defaults.channelId}
+                className="komu-input"
+              >
+                <option value="">Not set</option>
+                {channels.map((channel) => (
+                  <option key={channel.id} value={channel.id}>
+                    {channel.label}
+                  </option>
+                ))}
+              </select>
+            </FormField>
 
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            name="mentionEnabled"
-            defaultChecked={defaults.mentionEnabled}
-            className="accent-[color:var(--color-komu-accent)]"
-          />
-          <span>Mention a role when posting</span>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-            Mention role
-          </span>
-          <select
-            name="mentionRoleId"
-            defaultValue={defaults.mentionRoleId}
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-          >
-            <option value="">None</option>
-            {roles.map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-semibold">Message</h2>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-            Style
-          </span>
-          <select
-            name="messageMode"
-            value={customMode ? "CUSTOM" : "DEFAULT"}
-            onChange={(event) => setCustomMode(event.target.value === "CUSTOM")}
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-          >
-            <option value="DEFAULT">Use the stream title</option>
-            <option value="CUSTOM">Use my own message</option>
-          </select>
-        </label>
-
-        {customMode ? (
-          <label className="flex flex-col gap-1">
-            <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-              Custom message
-            </span>
-            <textarea
-              name="customMessage"
-              rows={3}
-              defaultValue={defaults.customMessage}
-              placeholder="{creator} just went live! Playing {game}. {url}"
-              className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-            />
-            <span className="text-xs text-[color:var(--color-komu-muted)]">
-              Placeholders: {"{creator} {title} {game} {viewers} {url}"}
-            </span>
-          </label>
-        ) : null}
-
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            name="embedEnabled"
-            defaultChecked={defaults.embedEnabled}
-            className="accent-[color:var(--color-komu-accent)]"
-          />
-          <span>Show an embed</span>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-            Embed colour
-          </span>
-          <input
-            name="embedColor"
-            defaultValue={defaults.embedColor}
-            placeholder="#7c5cff"
-            className="w-32 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-          />
-        </label>
-
-        <div className="flex flex-col gap-2">
-          <CheckboxField name="showThumbnail" label="Show thumbnail" defaultChecked={defaults.showThumbnail} />
-          <CheckboxField name="showGame" label="Show category" defaultChecked={defaults.showGame} />
-          <CheckboxField name="showViewerCount" label="Show viewer count" defaultChecked={defaults.showViewerCount} />
+            <div className="flex flex-col gap-2">
+              <FormField
+                label="Mention role"
+                hint="Optional. @everyone cannot be mentioned."
+              >
+                <select
+                  name="mentionRoleId"
+                  defaultValue={defaults.mentionRoleId}
+                  className="komu-input"
+                >
+                  <option value="">No role</option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.label}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <label className="flex items-center justify-between gap-3 text-[11px] text-[color:var(--color-komu-muted)]">
+                <span className="inline-flex items-center gap-1.5">
+                  <AtSign className="h-3 w-3" />
+                  Mention the role on the alert
+                </span>
+                <input
+                  type="checkbox"
+                  name="mentionEnabled"
+                  defaultChecked={defaults.mentionEnabled}
+                  className="komu-switch"
+                />
+              </label>
+            </div>
+          </div>
         </div>
-      </section>
+      </Panel>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-semibold">Watch button</h2>
+      <Panel
+        title="Message presentation"
+        description="The copy and embed that members see in Discord."
+        icon={MessageSquare}
+      >
+        <div className="flex flex-col gap-3">
+          <FormField label="Message style">
+            <select
+              name="messageMode"
+              value={customMode ? "CUSTOM" : "DEFAULT"}
+              onChange={(event) => setCustomMode(event.target.value === "CUSTOM")}
+              className="komu-input"
+            >
+              <option value="DEFAULT">Use the stream title</option>
+              <option value="CUSTOM">Use my own message</option>
+            </select>
+          </FormField>
 
-        <CheckboxField
-          name="watchButtonEnabled"
-          label="Add a Watch Now button"
-          defaultChecked={defaults.watchButtonEnabled}
-        />
+          {customMode ? (
+            <FormField
+              label="Custom message"
+              hint="Placeholders: {creator} {title} {game} {viewers} {url}"
+            >
+              <textarea
+                name="customMessage"
+                rows={3}
+                defaultValue={defaults.customMessage}
+                placeholder="{creator} just went live! Playing {game}. {url}"
+                className="komu-input"
+              />
+            </FormField>
+          ) : null}
 
-        {defaults.watchButtonEnabled ? (
-          <label className="flex flex-col gap-1">
-            <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-              Button label
-            </span>
-            <input
-              name="watchButtonLabel"
-              defaultValue={defaults.watchButtonLabel}
-              className="w-56 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+          <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
+            <ToggleRow
+              name="embedEnabled"
+              label="Show an embed"
+              hint="The richer card with stream details."
+              defaultChecked={defaults.embedEnabled}
+              className="min-h-[68px]"
             />
-          </label>
-        ) : null}
-      </section>
+            <FormField label="Embed colour" hint="Six-digit hex value.">
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-9 w-9 shrink-0 rounded-lg border border-white/10"
+                  style={{ backgroundColor: defaults.embedColor }}
+                  aria-hidden
+                />
+                <input
+                  name="embedColor"
+                  defaultValue={defaults.embedColor}
+                  placeholder="#6366f1"
+                  className="komu-input"
+                />
+              </div>
+            </FormField>
+          </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <ToggleRow
+              name="showThumbnail"
+              label="Show thumbnail"
+              defaultChecked={defaults.showThumbnail}
+            />
+            <ToggleRow
+              name="showGame"
+              label="Show category"
+              defaultChecked={defaults.showGame}
+            />
+            <ToggleRow
+              name="showViewerCount"
+              label="Show viewers"
+              defaultChecked={defaults.showViewerCount}
+            />
+          </div>
+        </div>
+      </Panel>
+
+      <Panel
+        title="Interactive action"
+        description="Give members one tap from the alert to the stream."
+        icon={MousePointerClick}
+      >
+        <div className="flex flex-col gap-3">
+          <ToggleRow
+            name="watchButtonEnabled"
+            label="Add a Watch Now button"
+            hint="Renders a Discord link button under the alert."
+            defaultChecked={defaults.watchButtonEnabled}
+            onChange={(event) => setWatchEnabled(event.target.checked)}
+          />
+
+          {watchEnabled ? (
+            <FormField label="Button label" hint="Discord limit: 80 characters.">
+              <input
+                name="watchButtonLabel"
+                defaultValue={defaults.watchButtonLabel}
+                className="komu-input max-w-sm"
+              />
+            </FormField>
+          ) : null}
+        </div>
+      </Panel>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-[color:var(--color-komu-border)] pt-4">
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-[color:var(--color-komu-accent)] px-5 py-2.5 font-medium text-white transition hover:bg-[color:var(--color-komu-accent-hover)] disabled:opacity-60"
+          className="komu-btn komu-btn-primary"
         >
-          {pending ? "Saving..." : "Save settings"}
+          <Save className="h-4 w-4" />
+          {pending ? "Saving…" : "Save settings"}
         </button>
 
         <button
@@ -239,61 +266,73 @@ export function AlertForm({
             })
           }
           disabled={testPending}
-          className="rounded-lg border border-[color:var(--color-komu-border)] px-5 py-2.5 font-medium transition hover:bg-[color:var(--color-komu-surface)] disabled:opacity-60"
+          className="komu-btn komu-btn-secondary"
         >
-          {testPending ? "Sending..." : "Send test alert"}
+          <Send className="h-4 w-4" />
+          {testPending ? "Sending…" : "Send test alert"}
         </button>
+
+        <span className="ml-auto hidden items-center gap-1.5 text-[10px] text-[color:var(--color-komu-dim)] sm:inline-flex">
+          <Radio className="h-3 w-3" />
+          Test posts to the selected channel immediately.
+        </span>
       </div>
 
-      {state?.error ? <StatusLine message={state.error} /> : null}
-      {state?.ok ? <StatusLine message="Settings saved." tone="ok" /> : null}
-      {testState?.error ? <StatusLine message={testState.error} /> : null}
+      {state?.error ? <StatusMessage tone="error">{state.error}</StatusMessage> : null}
+      {state?.ok ? (
+        <StatusMessage tone="success">Settings saved.</StatusMessage>
+      ) : null}
+      {testState?.error ? (
+        <StatusMessage tone="error">{testState.error}</StatusMessage>
+      ) : null}
       {testState?.ok ? (
-        <StatusLine message="Test alert sent. Check your Discord channel." tone="ok" />
+        <StatusMessage tone="success">
+          Test alert sent. Check your Discord channel.
+        </StatusMessage>
       ) : null}
     </form>
   );
 }
 
-function CheckboxField({
+function ToggleRow({
   name,
   label,
+  hint,
   defaultChecked,
+  onChange,
+  className,
 }: {
   name: string;
   label: string;
-  defaultChecked: boolean;
+  hint?: string;
+  defaultChecked?: boolean;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  className?: string;
 }) {
   return (
-    <label className="flex items-center gap-2">
+    <label
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] px-3 py-2.5",
+        className,
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block text-xs font-medium text-[color:var(--color-komu-text)]">
+          {label}
+        </span>
+        {hint ? (
+          <span className="mt-0.5 block text-[10px] leading-4 text-[color:var(--color-komu-dim)]">
+            {hint}
+          </span>
+        ) : null}
+      </span>
       <input
         type="checkbox"
         name={name}
         defaultChecked={defaultChecked}
-        className="accent-[color:var(--color-komu-accent)]"
+        onChange={onChange}
+        className="komu-switch"
       />
-      <span>{label}</span>
     </label>
-  );
-}
-
-function StatusLine({
-  message,
-  tone = "error",
-}: {
-  message: string;
-  tone?: "error" | "ok";
-}) {
-  return (
-    <p
-      role="status"
-      className={
-        tone === "ok"
-          ? "rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-3 text-sm"
-          : "rounded-md border border-[color:var(--color-komu-live)] bg-[color:var(--color-komu-live)]/10 p-3 text-sm text-[color:var(--color-komu-live)]"
-      }
-    >
-      {message}
-    </p>
   );
 }

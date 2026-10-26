@@ -1,19 +1,33 @@
 @import "tailwindcss";
 
 /*
- * Dark creator/gaming aesthetic (PRD section 8). Tokens live here so the
- * palette stays consistent as pages are added.
+ * Obsidian Cyber Broadcast design system.
+ *
+ * Deep obsidian surfaces, low-contrast borders, and restrained indigo/violet
+ * accents. Tokens stay in one place so every dashboard card, form and table
+ * uses the same palette.
  */
 @theme {
-  --color-komu-bg: #0b0d12;
-  --color-komu-surface: #141821;
-  --color-komu-surface-raised: #1c2130;
-  --color-komu-border: #2a3142;
-  --color-komu-accent: #7c5cff;
-  --color-komu-accent-hover: #8f74ff;
-  --color-komu-live: #ff4d5e;
-  --color-komu-text: #e7eaf3;
-  --color-komu-muted: #8b93a7;
+  --color-komu-bg: #0b0f17;
+  --color-komu-bg-deep: #070b12;
+  --color-komu-surface: #111827;
+  --color-komu-surface-raised: #161f30;
+  --color-komu-surface-active: #1e293b;
+  --color-komu-border: #1e293b;
+  --color-komu-border-muted: #334155;
+  --color-komu-accent: #6366f1;
+  --color-komu-accent-hover: #4f46e5;
+  --color-komu-violet: #8b5cf6;
+  --color-komu-success: #10b981;
+  --color-komu-warning: #f59e0b;
+  --color-komu-danger: #ef4444;
+  /* Kept as an alias for the existing destructive/error classes. */
+  --color-komu-live: #ef4444;
+  --color-komu-text: #f8fafc;
+  --color-komu-muted: #94a3b8;
+  --color-komu-dim: #64748b;
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
 }
 
 html {
@@ -21,8 +35,497 @@ html {
 }
 
 body {
+  min-height: 100vh;
   background-color: var(--color-komu-bg);
+  background-image:
+    radial-gradient(
+      ellipse 90% 52% at 50% -18%,
+      rgba(99, 102, 241, 0.11),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 48% 35% at 100% 0%,
+      rgba(139, 92, 246, 0.07),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 40% 30% at 0% 100%,
+      rgba(16, 185, 129, 0.035),
+      transparent 70%
+    );
+  background-attachment: fixed;
   color: var(--color-komu-text);
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-display {
+  font-family: var(--font-display), system-ui, sans-serif;
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.35);
+  color: #fff;
+}
+
+button:not(:disabled),
+[role="button"] {
+  cursor: pointer;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Reusable surfaces ------------------------------------------------------- */
+
+/*
+ * Component styles live in Tailwind's `components` layer so a utility class on
+ * the element can still override them. Unlayered CSS would win over every
+ * utility regardless of source order, which would make variants like
+ * `min-h-8`, `pl-5` or a custom border colour silently do nothing.
+ */
+@layer components {
+.komu-card {
+  border: 1px solid var(--color-komu-border);
+  border-radius: 1rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 45%),
+    var(--color-komu-surface);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.025) inset,
+    0 14px 34px -24px rgba(0, 0, 0, 0.9);
+}
+
+.komu-card-inset {
+  border: 1px solid rgba(51, 65, 85, 0.65);
+  border-radius: 0.75rem;
+  background: var(--color-komu-surface-raised);
+}
+
+.komu-card-interactive {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.komu-card-interactive:hover {
+  border-color: var(--color-komu-border-muted);
+  background-color: #131d2d;
+}
+
+.komu-label {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-komu-dim);
+}
+
+.komu-label-accent {
+  color: var(--color-komu-accent);
+}
+
+.komu-metric {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 2.35rem;
+  letter-spacing: -0.02em;
+  color: var(--color-komu-text);
+}
+
+.komu-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-komu-accent);
+}
+
+.komu-eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+/* Forms ------------------------------------------------------------------ */
+
+.komu-input {
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid var(--color-komu-border-muted);
+  border-radius: 0.5rem;
+  background-color: #121a28;
+  padding: 0.55rem 0.75rem;
+  color: var(--color-komu-text);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+.komu-input::placeholder {
+  color: #526078;
+}
+
+.komu-input:hover {
+  border-color: #40506a;
+}
+
+.komu-input:focus {
+  outline: none;
+  border-color: var(--color-komu-accent);
+  background-color: #131d2d;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.komu-input[aria-invalid="true"] {
+  border-color: var(--color-komu-danger);
+}
+
+select.komu-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.35rem;
+}
+
+select.komu-input option {
+  background: #111827;
+  color: var(--color-komu-text);
+}
+
+textarea.komu-input {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.komu-checkbox {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid var(--color-komu-border-muted);
+  border-radius: 0.25rem;
+  background-color: #121a28;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.komu-checkbox:checked {
+  border-color: var(--color-komu-accent);
+  background-color: var(--color-komu-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.komu-checkbox:focus-visible {
+  outline: 2px solid var(--color-komu-accent);
+  outline-offset: 2px;
+}
+
+.komu-switch {
+  position: relative;
+  width: 2.75rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid var(--color-komu-border-muted);
+  border-radius: 9999px;
+  background: var(--color-komu-surface-active);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.komu-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 150ms ease;
+}
+
+.komu-switch:checked {
+  border-color: var(--color-komu-accent);
+  background: var(--color-komu-accent);
+}
+
+.komu-switch:checked::after {
+  transform: translateX(1.2rem);
+  background: #fff;
+}
+
+.komu-switch:focus-visible {
+  outline: 2px solid var(--color-komu-accent);
+  outline-offset: 2px;
+}
+
+/* Buttons ---------------------------------------------------------------- */
+
+.komu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  border-radius: 0.5rem;
+  padding: 0.55rem 1rem;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform 120ms ease;
+}
+
+.komu-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.komu-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.komu-btn-primary {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-komu-accent);
+  color: #fff;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.16) inset,
+    0 10px 24px -14px rgba(99, 102, 241, 0.75);
+}
+
+.komu-btn-primary:hover:not(:disabled) {
+  background: var(--color-komu-accent-hover);
+}
+
+.komu-btn-secondary {
+  border: 1px solid var(--color-komu-border-muted);
+  background: rgba(22, 31, 48, 0.65);
+  color: var(--color-komu-muted);
+}
+
+.komu-btn-secondary:hover:not(:disabled) {
+  border-color: #40506a;
+  background: var(--color-komu-surface-active);
+  color: var(--color-komu-text);
+}
+
+.komu-btn-danger {
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.komu-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+}
+
+/* Status chips ----------------------------------------------------------- */
+
+.komu-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--color-komu-border-muted);
+  border-radius: 9999px;
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-komu-muted);
+  white-space: nowrap;
+}
+
+.komu-chip-success {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.09);
+  color: #6ee7b7;
+}
+
+.komu-chip-accent {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+}
+
+.komu-chip-warning {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fcd34d;
+}
+
+.komu-chip-danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.komu-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-komu-success);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
+}
+
+/* Tables ----------------------------------------------------------------- */
+
+.komu-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.komu-table thead th {
+  padding: 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--color-komu-border);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-komu-dim);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.komu-table tbody td {
+  padding: 0.8rem 0.75rem;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.7);
+  vertical-align: middle;
+}
+
+.komu-table tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.komu-table tbody tr:hover {
+  background: rgba(22, 31, 48, 0.75);
+}
+
+.komu-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Small helpers ---------------------------------------------------------- */
+
+.komu-muted {
+  color: var(--color-komu-muted);
+}
+
+.komu-dim {
+  color: var(--color-komu-dim);
+}
+
+.komu-divider {
+  border-top: 1px solid var(--color-komu-border);
+}
+
+.komu-glow-accent {
+  box-shadow: 0 0 28px -6px rgba(99, 102, 241, 0.35);
+}
+
+.komu-glow-success {
+  box-shadow: 0 0 24px -6px rgba(16, 185, 129, 0.35);
+}
+
+.komu-grid-lines {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.komu-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  border: 1px solid var(--color-komu-border-muted);
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(139, 92, 246, 0.12)),
+    var(--color-komu-surface-raised);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #e0e7ff;
+}
+
+.komu-avatar-sm {
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.625rem;
+}
+
+.komu-scroll-area {
+  overflow-y: auto;
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

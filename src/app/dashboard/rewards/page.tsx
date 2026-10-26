@@ -1,5 +1,14 @@
+import { Gift, Repeat, Sparkles, Terminal, Trophy, Users } from "lucide-react";
+import Link from "next/link";
 import { Suspense } from "react";
 
+import {
+  Badge,
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  Panel,
+} from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { listGuildRoles } from "@/lib/discord/rest";
@@ -23,16 +32,26 @@ export const metadata = { title: "Rewards" };
  */
 export default function RewardsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Rewards</h1>
-        <p className="text-sm text-[color:var(--color-komu-muted)]">
-          When a member reaches a milestone, give them XP, a role, or unlock an
-          achievement for them.
-        </p>
-      </header>
+    <div className="flex flex-col gap-7">
+      <PageHeader
+        eyebrow="Gamification / rewards engine"
+        title="Rewards engine"
+        description="Turn milestones into XP, Discord roles, or achievement unlocks — automatically."
+        actions={
+          <>
+            <Link href="/dashboard/challenges" className="komu-btn komu-btn-secondary">
+              <Trophy className="h-4 w-4" />
+              Challenges
+            </Link>
+            <Link href="/dashboard/achievements" className="komu-btn komu-btn-primary">
+              <Sparkles className="h-4 w-4" />
+              Achievements
+            </Link>
+          </>
+        }
+      />
 
-      <Suspense fallback={<PanelSkeleton />}>
+      <Suspense fallback={<RewardsSkeleton />}>
         <RewardsPanel />
       </Suspense>
     </div>
@@ -84,9 +103,16 @@ async function RewardsPanel() {
 
   if (!guild) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        Connect a Discord server first.
-      </p>
+      <EmptyState
+        icon={Gift}
+        title="Connect a Discord server first"
+        description="Rewards are scoped to the connected server."
+        action={
+          <Link href="/setup" className="komu-btn komu-btn-primary">
+            Open setup
+          </Link>
+        }
+      />
     );
   }
 
@@ -131,9 +157,43 @@ async function RewardsPanel() {
   );
 
   const unavailable = Object.entries(UNAVAILABLE_METRICS);
+  const active = rewards.filter((reward) => reward.enabled).length;
+  const grants = rewards.reduce((sum, reward) => sum + reward._count.grants, 0);
+  const repeatable = rewards.filter((reward) => reward.repeatable).length;
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Reward rules"
+          value={rewards.length.toString()}
+          hint="Configured conditions"
+          icon={Gift}
+          tone="accent"
+        />
+        <MetricCard
+          label="Active rewards"
+          value={active.toString()}
+          hint={`${rewards.length - active} paused`}
+          icon={Sparkles}
+          tone={active > 0 ? "success" : "neutral"}
+        />
+        <MetricCard
+          label="Total payouts"
+          value={grants.toLocaleString()}
+          hint="Across every reward"
+          icon={Users}
+          tone="violet"
+        />
+        <MetricCard
+          label="Repeatable"
+          value={repeatable.toString()}
+          hint="Can pay out more than once"
+          icon={Repeat}
+          tone="warning"
+        />
+      </div>
+
       <RewardManager
         rewards={rewards.map((reward) => ({
           id: reward.id,
@@ -158,40 +218,68 @@ async function RewardsPanel() {
         }))}
       />
 
-      {unavailable.length > 0 ? (
-        <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4">
-          <h2 className="text-sm font-semibold">Not available yet</h2>
-          <ul className="mt-2 flex list-inside list-disc flex-col gap-1 text-sm text-[color:var(--color-komu-muted)]">
-            {unavailable.map(([metric, reason]) => (
-              <li key={metric}>{reason}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel
+          title="Granting by hand"
+          description="One member, one reward, on demand."
+          icon={Terminal}
+          action={<Badge tone="accent">/reward</Badge>}
+        >
+          <p className="text-xs leading-5 text-[color:var(--color-komu-muted)]">
+            Use{" "}
+            <code className="rounded border border-[color:var(--color-komu-border-muted)] bg-white/[0.03] px-1.5 py-0.5 text-[color:var(--color-komu-text)]">
+              /reward
+            </code>{" "}
+            in Discord to grant a reward to one member. It can re-grant a reward
+            they already have, but it will not hand out one they have not earned.
+          </p>
+        </Panel>
 
-      <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4">
-        <h2 className="text-sm font-semibold">Granting by hand</h2>
-        <p className="mt-1 text-sm text-[color:var(--color-komu-muted)]">
-          Use <code className="text-[color:var(--color-komu-text)]">/reward</code> in
-          Discord to grant a reward to one member. It can re-grant a reward
-          they already have, but it will not hand out one they have not earned.
-        </p>
-      </section>
+        {unavailable.length > 0 ? (
+          <Panel
+            title="Signals not collected yet"
+            description="Shown rather than silently omitted."
+            icon={Repeat}
+            action={<Badge tone="neutral">{unavailable.length}</Badge>}
+          >
+            <ul className="flex flex-col gap-2">
+              {unavailable.map(([metric, reason]) => (
+                <li
+                  key={metric}
+                  className="rounded-lg border border-[color:var(--color-komu-border)] bg-white/[0.015] px-3 py-2 text-xs leading-5 text-[color:var(--color-komu-muted)]"
+                >
+                  {reason}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ) : null}
+      </div>
 
-      <p className="text-xs text-[color:var(--color-komu-muted)]">
-        Rewards are checked whenever a member sends a qualifying message,
-        reacts to a live alert, or joins the server. A one-shot reward is
-        granted once per member.
+      <p className="text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
+        Rewards are checked whenever a member sends a qualifying message, reacts
+        to a live alert, or joins the server. A one-shot reward is granted once
+        per member.
       </p>
     </div>
   );
 }
 
-function PanelSkeleton() {
+function RewardsSkeleton() {
   return (
-    <div
-      className="h-64 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
-      aria-hidden
-    />
+    <div className="flex flex-col gap-6" aria-hidden>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+        <div className="h-80 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+        <div className="h-80 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+      </div>
+    </div>
   );
 }

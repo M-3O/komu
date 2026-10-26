@@ -1,6 +1,35 @@
+import {
+  Activity,
+  ArrowUpRight,
+  BarChart3,
+  Check,
+  Circle,
+  Gift,
+  Medal,
+  MessageSquare,
+  Plus,
+  Radio,
+  Sparkles,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import {
+  Badge,
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  Panel,
+  PlatformTile,
+  ProgressBar,
+  ProgressRing,
+  StatusDot,
+  cn,
+  providerLabel,
+} from "@/components/dashboard/ui";
 import { getAnalytics } from "@/lib/analytics/queries";
 import { getDashboardStats } from "@/lib/dashboard/get-dashboard-stats";
 import { getSetupChecklist } from "@/lib/dashboard/setup-checklist";
@@ -18,22 +47,286 @@ export const metadata = { title: "Overview" };
  */
 export default function DashboardPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
-      </header>
+    <div className="flex flex-col gap-7">
+      <PageHeader
+        eyebrow="Operations command"
+        title="Command overview"
+        description="A live read on your community, connected channels, and launch readiness."
+        actions={
+          <>
+            <Link href="/dashboard/analytics" className="komu-btn komu-btn-secondary">
+              <BarChart3 className="h-4 w-4" />
+              Full analytics
+            </Link>
+            <Link href="/dashboard/streams" className="komu-btn komu-btn-primary">
+              <Plus className="h-4 w-4" />
+              Connect channel
+            </Link>
+          </>
+        }
+      />
 
-      <Suspense fallback={<StatsSkeleton />}>
-        <DashboardStats />
-      </Suspense>
-
-      <Suspense fallback={<StatsSkeleton />}>
-        <RecentActivity />
+      <Suspense fallback={<OverviewSkeleton />}>
+        <OverviewBoard />
       </Suspense>
 
       <Suspense fallback={<ChecklistSkeleton />}>
         <SetupChecklistPanel />
       </Suspense>
+    </div>
+  );
+}
+
+async function OverviewBoard() {
+  const [report, stats] = await Promise.all([
+    getAnalytics("30D"),
+    getDashboardStats(),
+  ]);
+
+  const { totals } = report;
+  const { guild, memberCount, channels, alertsEnabled } = stats;
+  const engagement =
+    totals.totalMembers > 0
+      ? Math.round((totals.activeMembers / totals.totalMembers) * 100)
+      : 0;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Members tracked"
+          value={memberCount.toLocaleString()}
+          hint={`${totals.newMembers.toLocaleString()} joined in the last 30 days`}
+          icon={Users}
+          tone="accent"
+        />
+        <MetricCard
+          label="Active members"
+          value={totals.activeMembers.toLocaleString()}
+          hint={`${engagement}% of the server earned XP`}
+          icon={Activity}
+          tone="success"
+          footer={<ProgressBar value={engagement} tone="success" />}
+        />
+        <MetricCard
+          label="Messages"
+          value={totals.messages.toLocaleString()}
+          hint={`${totals.xpEarned.toLocaleString()} XP awarded · qualifying messages`}
+          icon={MessageSquare}
+          tone="violet"
+        />
+        <MetricCard
+          label="Connected channels"
+          value={channels.length.toString()}
+          hint={`${alertsEnabled} of ${channels.length || 0} alert routes armed`}
+          icon={Radio}
+          tone={alertsEnabled === channels.length && channels.length > 0 ? "success" : "warning"}
+          footer={
+            <div className="flex items-center gap-2">
+              <StatusDot tone={alertsEnabled > 0 ? "success" : "neutral"} pulse={alertsEnabled > 0} />
+              <span className="text-[11px] text-[color:var(--color-komu-muted)]">
+                {channels.length === 0
+                  ? "No channels connected"
+                  : alertsEnabled === channels.length
+                    ? "Every channel can dispatch"
+                    : "Some channels need an alert route"}
+              </span>
+            </div>
+          }
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-12">
+        <Panel
+          className="xl:col-span-7"
+          title="Broadcast command center"
+          description="Connected creators and the routes that announce them."
+          icon={Radio}
+          action={
+            <Link
+              href="/dashboard/streams"
+              className="inline-flex items-center gap-1 text-xs font-medium text-indigo-300 transition hover:text-indigo-200"
+            >
+              Manage channels <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          }
+        >
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-400/20 bg-gradient-to-r from-indigo-500/[0.09] to-violet-500/[0.04] px-3.5 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-400/25 bg-indigo-500/10 text-indigo-300">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-[color:var(--color-komu-text)]">
+                  {guild?.name ?? "Your Discord server"}
+                </p>
+                <p className="text-[10px] text-[color:var(--color-komu-muted)]">
+                  {channels.length} connected {channels.length === 1 ? "pipeline" : "pipelines"} ·{" "}
+                  {alertsEnabled} dispatch {alertsEnabled === 1 ? "route" : "routes"}
+                </p>
+              </div>
+            </div>
+            <Badge tone={alertsEnabled > 0 ? "success" : "warning"} dot>
+              {alertsEnabled > 0 ? "Dispatch armed" : "Route needed"}
+            </Badge>
+          </div>
+
+          {channels.length === 0 ? (
+            <EmptyState
+              icon={Radio}
+              title="No streaming channels yet"
+              description="Connect Twitch, YouTube, or Kick so Komu can watch for live broadcasts."
+              action={
+                <Link href="/dashboard/streams" className="komu-btn komu-btn-primary">
+                  <Plus className="h-4 w-4" /> Connect a channel
+                </Link>
+              }
+            />
+          ) : (
+            <ul className="flex flex-col gap-2.5">
+              {channels.map((channel) => (
+                <li
+                  key={channel.id}
+                  className="komu-card-interactive flex flex-wrap items-center gap-3 rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-3"
+                >
+                  <PlatformTile provider={channel.provider} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-[color:var(--color-komu-text)]">
+                      {channel.displayName ?? channel.username}
+                    </p>
+                    <p className="truncate text-[11px] text-[color:var(--color-komu-muted)]">
+                      {providerLabel(channel.provider)} · @{channel.username}
+                    </p>
+                  </div>
+                  <Badge tone={channel.alertConfig?.enabled ? "success" : "warning"}>
+                    {channel.alertConfig?.enabled ? "Alerts on" : "Not routed"}
+                  </Badge>
+                  <Link
+                    href="/dashboard/alerts"
+                    className="text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+                  >
+                    Configure
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {channels.length > 0 ? (
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-[color:var(--color-komu-border)] pt-3">
+              <p className="text-[11px] text-[color:var(--color-komu-muted)]">
+                Alerts post through Discord REST; the bot is not required for delivery.
+              </p>
+              <Link
+                href="/dashboard/alerts"
+                className="shrink-0 text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+              >
+                Open alert routing
+              </Link>
+            </div>
+          ) : null}
+        </Panel>
+
+        <Panel
+          className="xl:col-span-5"
+          title="Community pulse"
+          description="The last 30 days of real activity."
+          icon={Activity}
+          action={
+            <Link
+              href="/dashboard/analytics"
+              className="inline-flex items-center gap-1 text-xs font-medium text-indigo-300 transition hover:text-indigo-200"
+            >
+              Open <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          }
+        >
+          <div className="grid grid-cols-2 gap-2.5">
+            <PulseStat
+              icon={Users}
+              label="New members"
+              value={totals.newMembers}
+              tone="accent"
+            />
+            <PulseStat
+              icon={Zap}
+              label="Stream visits"
+              value={totals.attendance}
+              tone="success"
+            />
+            <PulseStat
+              icon={Gift}
+              label="Rewards paid"
+              value={totals.rewardsGranted}
+              tone="violet"
+            />
+            <PulseStat
+              icon={Trophy}
+              label="Challenges cleared"
+              value={totals.challengesCompleted}
+              tone="warning"
+            />
+          </div>
+
+          <div className="mt-3 rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="komu-label">Member engagement</p>
+              <span className="font-display text-xs font-bold text-[color:var(--color-komu-text)]">
+                {engagement}%
+              </span>
+            </div>
+            <ProgressBar value={engagement} tone="accent" className="mt-2" />
+            <p className="mt-2 text-[11px] leading-4 text-[color:var(--color-komu-muted)]">
+              {totals.activeMembers.toLocaleString()} of{" "}
+              {totals.totalMembers.toLocaleString()} members earned XP in this window.
+            </p>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between border-t border-[color:var(--color-komu-border)] pt-3">
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-[color:var(--color-komu-muted)]">
+              <Medal className="h-3.5 w-3.5 text-amber-300" />
+              {totals.achievementsUnlocked.toLocaleString()} achievements unlocked
+            </span>
+            <Link
+              href="/dashboard/leaderboards"
+              className="text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+            >
+              Leaderboard
+            </Link>
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function PulseStat({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: number;
+  tone: "accent" | "success" | "violet" | "warning";
+}) {
+  const color = {
+    accent: "text-indigo-300",
+    success: "text-emerald-300",
+    violet: "text-violet-300",
+    warning: "text-amber-300",
+  }[tone];
+
+  return (
+    <div className="rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-3">
+      <div className="flex items-center gap-2">
+        <Icon className={cn("h-3.5 w-3.5", color)} />
+        <p className="komu-label text-[9px]">{label}</p>
+      </div>
+      <p className="mt-2 font-display text-xl font-bold tracking-[-0.02em] text-[color:var(--color-komu-text)]">
+        {value.toLocaleString()}
+      </p>
     </div>
   );
 }
@@ -47,48 +340,86 @@ export default function DashboardPage() {
  */
 async function SetupChecklistPanel() {
   const { steps, completed, total, finished } = await getSetupChecklist();
-
+  const percent = total > 0 ? (completed / total) * 100 : 0;
   const outstanding = steps.filter((step) => !step.done);
 
   return (
-    <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-semibold">Setup</h2>
-        <span className="text-sm text-[color:var(--color-komu-muted)]">
-          {completed} of {total} done
-        </span>
-      </div>
+    <Panel
+      title="Launch checklist"
+      description="The real state of this installation, not a fixed script."
+      icon={Check}
+      action={
+        <Badge tone={finished ? "success" : "accent"} dot={finished}>
+          {completed} / {total} complete
+        </Badge>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
+        <div className="flex items-center gap-4 rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-4 lg:flex-col lg:items-start">
+          <ProgressRing
+            value={percent}
+            label={`${Math.round(percent)}%`}
+            tone={finished ? "success" : "accent"}
+          />
+          <div>
+            <p className="font-display text-sm font-semibold text-[color:var(--color-komu-text)]">
+              {finished ? "Ready to broadcast" : "Finish the launch path"}
+            </p>
+            <p className="mt-1 text-[11px] leading-4 text-[color:var(--color-komu-muted)]">
+              {finished
+                ? "Everything is set up. Alerts will post when you go live."
+                : `${outstanding.length} ${outstanding.length === 1 ? "step" : "steps"} left in the launch path.`}
+            </p>
+          </div>
+        </div>
 
-      {finished ? (
-        <p className="mt-3 text-sm text-[color:var(--color-komu-muted)]">
-          Everything is set up. Alerts will post when you go live.
-        </p>
-      ) : (
-        <ul className="mt-3 flex flex-col gap-2">
+        <ul className="grid gap-2 sm:grid-cols-2">
           {steps.map((step) => (
-            <li key={step.id} className="flex items-start gap-3 text-sm">
+            <li
+              key={step.id}
+              className={cn(
+                "flex items-start gap-2.5 rounded-xl border p-3",
+                step.done
+                  ? "border-[color:var(--color-komu-border)] bg-white/[0.01]"
+                  : "border-indigo-400/20 bg-indigo-500/[0.035]",
+              )}
+            >
               <span
-                aria-hidden
-                className={
+                className={cn(
+                  "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
                   step.done
-                    ? "mt-0.5 text-[color:var(--color-komu-accent)]"
-                    : "mt-0.5 text-[color:var(--color-komu-muted)]"
-                }
+                    ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
+                    : "border-[color:var(--color-komu-border-muted)] text-[color:var(--color-komu-dim)]",
+                )}
+                aria-hidden
               >
-                {step.done ? "✓" : "○"}
+                {step.done ? (
+                  <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                ) : (
+                  <Circle className="h-2 w-2" />
+                )}
               </span>
 
-              <span className={step.done ? "opacity-60" : ""}>
-                <span className="font-medium">{step.label}</span>
-                <span className="block text-[color:var(--color-komu-muted)]">
+              <div className="min-w-0 flex-1">
+                <p
+                  className={cn(
+                    "text-xs font-semibold",
+                    step.done
+                      ? "text-[color:var(--color-komu-muted)]"
+                      : "text-[color:var(--color-komu-text)]",
+                  )}
+                >
+                  {step.label}
+                </p>
+                <p className="mt-0.5 text-[10px] leading-4 text-[color:var(--color-komu-dim)]">
                   {step.detail}
-                </span>
-              </span>
+                </p>
+              </div>
 
               {step.href ? (
                 <Link
                   href={step.href}
-                  className="ml-auto shrink-0 self-center text-xs text-[color:var(--color-komu-accent)] hover:underline"
+                  className="shrink-0 text-[10px] font-semibold text-indigo-300 hover:text-indigo-200"
                 >
                   Set up
                 </Link>
@@ -96,100 +427,43 @@ async function SetupChecklistPanel() {
             </li>
           ))}
         </ul>
-      )}
+      </div>
 
       {outstanding.length > 0 && !finished ? (
-        <p className="mt-4 text-xs text-[color:var(--color-komu-muted)]">
-          The alert role and role rules are optional. Everything else is needed
-          before alerts can work.
+        <p className="mt-4 text-[11px] text-[color:var(--color-komu-muted)]">
+          The alert role and role rules are optional. A streaming account and an
+          alert channel are all that live alerts require; the rest is
+          recommended setup.
         </p>
       ) : null}
-    </section>
+    </Panel>
+  );
+}
+
+function OverviewSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-hidden>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-12">
+        <div className="h-80 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] xl:col-span-7" />
+        <div className="h-80 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] xl:col-span-5" />
+      </div>
+    </div>
   );
 }
 
 function ChecklistSkeleton() {
   return (
     <div
-      className="h-56 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+      className="h-64 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
       aria-hidden
     />
-  );
-}
-
-/** The handful of numbers worth seeing without changing page. */
-async function RecentActivity() {
-  const { totals } = await getAnalytics("30D");
-
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Last 30 days</h2>
-        <Link
-          href="/dashboard/analytics"
-          className="text-sm text-[color:var(--color-komu-accent)] hover:underline"
-        >
-          Full analytics
-        </Link>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Active members" value={totals.activeMembers.toLocaleString()} />
-        <StatCard label="Messages" value={totals.messages.toLocaleString()} />
-        <StatCard label="Stream attendance" value={totals.attendance.toLocaleString()} />
-        <StatCard label="New members" value={totals.newMembers.toLocaleString()} />
-      </div>
-    </section>
-  );
-}
-
-async function DashboardStats() {
-  const { guild, memberCount, streamingAccountCount } =
-    await getDashboardStats();
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-[color:var(--color-komu-muted)]">
-        {guild
-          ? `Connected to ${guild.name}`
-          : "No Discord server connected yet"}
-      </p>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Server" value={guild ? "Connected" : "Not set up"} />
-        <StatCard label="Members tracked" value={memberCount.toString()} />
-        <StatCard
-          label="Streaming channels"
-          value={streamingAccountCount.toString()}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StatsSkeleton() {
-  return (
-    <div className="flex flex-col gap-4" aria-hidden>
-      <div className="h-4 w-48 animate-pulse rounded bg-[color:var(--color-komu-surface-raised)]" />
-      <div className="grid gap-4 sm:grid-cols-3">
-        {[0, 1, 2].map((index) => (
-          <div
-            key={index}
-            className="h-24 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-5">
-      <p className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
-    </div>
   );
 }

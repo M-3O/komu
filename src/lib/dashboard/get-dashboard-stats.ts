@@ -6,9 +6,9 @@ import { prisma } from "@/lib/db";
 /**
  * Headline counts for the dashboard overview.
  *
- * Deliberately reads three independent counts in parallel rather than
- * loading relations. Analytics beyond this lives in `lib/analytics` and
- * arrives in Phase 13.
+ * Reads independent rows in parallel rather than loading relations. Analytics
+ * beyond this lives in `lib/analytics`; the connected channels are included
+ * here because the overview's readiness panel needs them and the list is tiny.
  *
  * Calls `requireCurrentUser` itself rather than relying on the layout or
  * proxy. Each data function is its own boundary, so a future change to the
@@ -18,14 +18,32 @@ import { prisma } from "@/lib/db";
 export async function getDashboardStats() {
   await requireCurrentUser();
 
-  const [guild, memberCount, streamingAccountCount] = await Promise.all([
+  const [guild, memberCount, channels] = await Promise.all([
     prisma.guild.findFirst({
       orderBy: { createdAt: "asc" },
       select: { id: true, name: true, discordId: true, setupCompletedAt: true },
     }),
     prisma.guildMember.count(),
-    prisma.streamingAccount.count({ where: { disconnectedAt: null } }),
+    prisma.streamingAccount.findMany({
+      where: { disconnectedAt: null },
+      select: {
+        id: true,
+        provider: true,
+        username: true,
+        displayName: true,
+        alertConfig: { select: { enabled: true, channelId: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
-  return { guild, memberCount, streamingAccountCount };
+  return {
+    guild,
+    memberCount,
+    streamingAccountCount: channels.length,
+    channels,
+    alertsEnabled: channels.filter(
+      (channel) => channel.alertConfig?.enabled && channel.alertConfig.channelId,
+    ).length,
+  };
 }

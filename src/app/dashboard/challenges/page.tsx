@@ -1,5 +1,23 @@
+import {
+  CheckCircle2,
+  Info,
+  Sparkles,
+  Swords,
+  Target,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react";
+import Link from "next/link";
 import { Suspense } from "react";
 
+import {
+  Badge,
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  Panel,
+} from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import {
   countersFrom,
@@ -33,16 +51,26 @@ const MAX_PROGRESS_ROWS = 25;
  */
 export default function ChallengesPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Challenges</h1>
-        <p className="text-sm text-[color:var(--color-komu-muted)]">
-          Give the community a shared goal. Everyone who finishes gets the XP
-          and role you set.
-        </p>
-      </header>
+    <div className="flex flex-col gap-7">
+      <PageHeader
+        eyebrow="Gamification / quests"
+        title="Challenges & community quests"
+        description="Give the community a shared goal. Everyone who finishes gets the XP and role you set."
+        actions={
+          <>
+            <Link href="/dashboard/rewards" className="komu-btn komu-btn-secondary">
+              <Trophy className="h-4 w-4" />
+              Rewards engine
+            </Link>
+            <Link href="/dashboard/achievements" className="komu-btn komu-btn-primary">
+              <Sparkles className="h-4 w-4" />
+              Achievements
+            </Link>
+          </>
+        }
+      />
 
-      <Suspense fallback={<PanelSkeleton />}>
+      <Suspense fallback={<ChallengesSkeleton />}>
         <ChallengesPanel />
       </Suspense>
     </div>
@@ -59,9 +87,16 @@ async function ChallengesPanel() {
 
   if (!guild) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        Connect a Discord server first.
-      </p>
+      <EmptyState
+        icon={Swords}
+        title="Connect a Discord server first"
+        description="Challenges are scoped to the connected server."
+        action={
+          <Link href="/setup" className="komu-btn komu-btn-primary">
+            Open setup
+          </Link>
+        }
+      />
     );
   }
 
@@ -108,9 +143,49 @@ async function ChallengesPanel() {
   const roles = await listGuildRoles(guild.discordId);
 
   const unavailable = Object.entries(UNAVAILABLE_REQUIREMENT_TYPES);
+  const active = challenges.filter((challenge) => challenge.enabled).length;
+  const enrolled = challenges.reduce(
+    (sum, challenge) => sum + challenge._count.progress,
+    0,
+  );
+  const completed = challenges.reduce(
+    (sum, challenge) => sum + (completedByChallenge.get(challenge.id) ?? 0),
+    0,
+  );
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Challenge rules"
+          value={challenges.length.toString()}
+          hint="Configured for this server"
+          icon={Swords}
+          tone="accent"
+        />
+        <MetricCard
+          label="Active quests"
+          value={active.toString()}
+          hint={`${challenges.length - active} paused`}
+          icon={Target}
+          tone={active > 0 ? "success" : "neutral"}
+        />
+        <MetricCard
+          label="Member enrolments"
+          value={enrolled.toLocaleString()}
+          hint="Across all challenges"
+          icon={Users}
+          tone="violet"
+        />
+        <MetricCard
+          label="Completions"
+          value={completed.toLocaleString()}
+          hint="All time"
+          icon={CheckCircle2}
+          tone="success"
+        />
+      </div>
+
       <ChallengeManager
         challenges={challenges.map((challenge) => ({
           id: challenge.id,
@@ -158,32 +233,59 @@ async function ChallengesPanel() {
         )}
       />
 
-      {unavailable.length > 0 ? (
-        <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4">
-          <h2 className="text-sm font-semibold">Not available yet</h2>
-          <ul className="mt-2 flex list-inside list-disc flex-col gap-1 text-sm text-[color:var(--color-komu-muted)]">
-            {unavailable.map(([type, reason]) => (
-              <li key={type}>{reason}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel
+          title="How progress begins"
+          description="No retroactive credit."
+          icon={Info}
+        >
+          <p className="text-xs leading-5 text-[color:var(--color-komu-muted)]">
+            Progress counts from the moment a member first does something the
+            challenge asks for, so a new challenge never credits past activity.
+            Members can check their own progress with{" "}
+            <code className="rounded border border-[color:var(--color-komu-border-muted)] bg-white/[0.03] px-1.5 py-0.5 text-[color:var(--color-komu-text)]">
+              /challenge
+            </code>
+            .
+          </p>
+        </Panel>
 
-      <p className="text-xs text-[color:var(--color-komu-muted)]">
-        Progress counts activity from the moment a member first does something
-        the challenge asks for, so a new challenge never credits past activity.
-        Members can check their own progress with{" "}
-        <code className="text-[color:var(--color-komu-text)]">/challenge</code>.
-      </p>
+        {unavailable.length > 0 ? (
+          <Panel
+            title="Requirements not available yet"
+            description="Shown rather than silently omitted."
+            icon={Zap}
+            action={<Badge tone="neutral">{unavailable.length}</Badge>}
+          >
+            <ul className="flex flex-col gap-2">
+              {unavailable.map(([type, reason]) => (
+                <li
+                  key={type}
+                  className="rounded-lg border border-[color:var(--color-komu-border)] bg-white/[0.015] px-3 py-2 text-xs leading-5 text-[color:var(--color-komu-muted)]"
+                >
+                  {reason}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function PanelSkeleton() {
+function ChallengesSkeleton() {
   return (
-    <div
-      className="h-64 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
-      aria-hidden
-    />
+    <div className="flex flex-col gap-6" aria-hidden>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+      <div className="h-96 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+    </div>
   );
 }

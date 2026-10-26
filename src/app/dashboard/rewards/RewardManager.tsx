@@ -1,14 +1,23 @@
 "use client";
 
+import { Gift, Plus, Sparkles, Users } from "lucide-react";
 import { useActionState, useState } from "react";
 
-  import {
+import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
+import {
+  Badge,
+  EmptyState,
+  FormField,
+  Panel,
+  StatusMessage,
+  cn,
+} from "@/components/dashboard/ui";
+import {
   createRewardAction,
   deleteRewardAction,
   toggleRewardAction,
   type RewardFormState,
 } from "./actions";
-import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 
 /**
  * Declared here rather than in actions.ts because a "use server" file may only
@@ -71,86 +80,110 @@ export function RewardManager({
   );
 
   return (
-    <div className="flex flex-col gap-8">
-      <RewardList rewards={rewards} />
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <Panel
+        title="Reward rules"
+        description="Conditions that pay out XP, roles, or achievements."
+        icon={Gift}
+        action={<Badge tone="accent">{rewards.length} total</Badge>}
+      >
+        <RewardList rewards={rewards} />
+      </Panel>
 
-      <form action={formAction} className="flex flex-col gap-3">
-        <h2 className="font-semibold">Add a reward</h2>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Name">
-            <input
-              name="name"
-              required
-              placeholder="Stream Regular"
-              className="w-44 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-            />
-          </Field>
-
-          <Field label="Description">
-            <input
-              name="description"
-              placeholder="Optional"
-              className="w-52 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-            />
-          </Field>
-
-          <Field label="When">
-            <select
-              name="metric"
-              defaultValue={metrics[0]?.value}
-              className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-            >
-              {metrics.map((metric) => (
-                <option key={metric.value} value={metric.value}>
-                  {metric.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Threshold">
-            <input
-              name="threshold"
-              type="number"
-              min={0}
-              defaultValue={5}
-              required
-              className="w-28 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-            />
-          </Field>
-        </div>
-
-        <ActionPicker actionTypes={actionTypes} roles={roles} achievements={achievements} />
-
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="repeatable" />
-          Can be granted more than once
-        </label>
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="self-start rounded-lg bg-[color:var(--color-komu-accent)] px-5 py-2 font-medium text-white transition hover:bg-[color:var(--color-komu-accent-hover)] disabled:opacity-60"
+      <div className="xl:sticky xl:top-24">
+        <Panel
+          title="Create a reward"
+          description="One condition, one payout."
+          icon={Sparkles}
         >
-          {pending ? "Adding..." : "Add reward"}
-        </button>
+          <form action={formAction} className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <FormField label="Name">
+                <input
+                  name="name"
+                  required
+                  placeholder="Stream Regular"
+                  className="komu-input"
+                />
+              </FormField>
 
-        {state?.error ? (
-          <p
-            role="alert"
-            className="rounded-md border border-[color:var(--color-komu-live)] bg-[color:var(--color-komu-live)]/10 p-3 text-sm text-[color:var(--color-komu-live)]"
-          >
-            {state.error}
-          </p>
-        ) : null}
+              <FormField label="Description" hint="Optional, shown in the dashboard.">
+                <input
+                  name="description"
+                  placeholder="Reward for showing up"
+                  className="komu-input"
+                />
+              </FormField>
+            </div>
 
-        {state?.ok ? (
-          <p className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-3 text-sm">
-            Reward added. It applies the next time a member qualifies.
-          </p>
-        ) : null}
-      </form>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField label="When">
+                <select
+                  name="metric"
+                  defaultValue={metrics[0]?.value}
+                  className="komu-input"
+                >
+                  {metrics.map((metric) => (
+                    <option key={metric.value} value={metric.value}>
+                      {metric.label}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Threshold">
+                <input
+                  name="threshold"
+                  type="number"
+                  min={0}
+                  defaultValue={5}
+                  required
+                  className="komu-input"
+                />
+              </FormField>
+            </div>
+
+            <div className="rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-3">
+              <p className="komu-label mb-2">Then pay out</p>
+              <ActionPicker
+                actionTypes={actionTypes}
+                roles={roles}
+                achievements={achievements}
+              />
+            </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] px-3 py-2.5">
+              <span>
+                <span className="block text-xs font-medium text-[color:var(--color-komu-text)]">
+                  Repeatable
+                </span>
+                <span className="mt-0.5 block text-[10px] leading-4 text-[color:var(--color-komu-dim)]">
+                  Grant more than once when the condition is met again.
+                </span>
+              </span>
+              <input type="checkbox" name="repeatable" className="komu-switch" />
+            </label>
+
+            <button
+              type="submit"
+              disabled={pending}
+              className="komu-btn komu-btn-primary"
+            >
+              <Plus className="h-4 w-4" />
+              {pending ? "Adding…" : "Add reward"}
+            </button>
+
+            {state?.error ? (
+              <StatusMessage tone="error">{state.error}</StatusMessage>
+            ) : null}
+            {state?.ok ? (
+              <StatusMessage tone="success">
+                Reward added. It applies the next time a member qualifies.
+              </StatusMessage>
+            ) : null}
+          </form>
+        </Panel>
+      </div>
     </div>
   );
 }
@@ -159,49 +192,91 @@ export function RewardManager({
 function RewardList({ rewards }: { rewards: RewardRow[] }) {
   if (rewards.length === 0) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        No rewards yet. Add one below to give members something for reaching a
-        milestone.
-      </p>
+      <EmptyState
+        icon={Gift}
+        title="No rewards yet"
+        description="Add one to give members something for reaching a milestone."
+      />
     );
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-2.5">
       {rewards.map((reward) => (
         <li
           key={reward.id}
-          className="flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4"
+          className={cn(
+            "rounded-xl border p-3.5 transition",
+            reward.enabled
+              ? "border-[color:var(--color-komu-border)] bg-white/[0.015]"
+              : "border-[color:var(--color-komu-border)] bg-white/[0.008] opacity-70",
+          )}
         >
-          <span className={reward.enabled ? "" : "opacity-50"}>
-            <span className="font-medium">{reward.name}</span>
-            <span className="ml-2 text-sm text-[color:var(--color-komu-muted)]">
-              {reward.threshold}+ {reward.metricLabel} -&gt; {reward.actions.join(" + ")}
-              {reward.repeatable ? " (repeatable)" : ""}
+          <div className="flex flex-wrap items-start gap-3">
+            <span
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+                reward.enabled
+                  ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-300"
+                  : "border-[color:var(--color-komu-border-muted)] bg-white/[0.02] text-[color:var(--color-komu-dim)]",
+              )}
+            >
+              <Gift className="h-[18px] w-[18px]" />
             </span>
-            {reward.description ? (
-              <span className="block text-xs text-[color:var(--color-komu-muted)]">
-                {reward.description}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-[color:var(--color-komu-text)]">
+                  {reward.name}
+                </p>
+                <Badge tone={reward.enabled ? "success" : "neutral"}>
+                  {reward.enabled ? "Active" : "Paused"}
+                </Badge>
+                {reward.repeatable ? <Badge tone="violet">Repeatable</Badge> : null}
+              </div>
+
+              {reward.description ? (
+                <p className="mt-0.5 text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
+                  {reward.description}
+                </p>
+              ) : null}
+
+              <p className="mt-1.5 text-[11px] text-[color:var(--color-komu-muted)]">
+                At{" "}
+                <span className="font-semibold text-[color:var(--color-komu-text)]">
+                  {reward.threshold.toLocaleString()} {reward.metricLabel}
+                </span>{" "}
+                <span className="text-[color:var(--color-komu-dim)]">→</span>
+              </p>
+
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {reward.actions.map((action) => (
+                  <span
+                    key={action}
+                    className="rounded-md border border-indigo-400/20 bg-indigo-500/[0.07] px-2 py-1 text-[10px] font-medium text-indigo-200"
+                  >
+                    {action}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
+              <span className="mr-1 inline-flex items-center gap-1 text-[10px] text-[color:var(--color-komu-dim)]">
+                <Users className="h-3 w-3" />
+                {reward.grantCount.toLocaleString()}
               </span>
-            ) : null}
-            <span className="block text-xs text-[color:var(--color-komu-muted)]">
-              Granted to {reward.grantCount}{" "}
-              {reward.grantCount === 1 ? "member" : "members"}
-            </span>
-          </span>
-
-          <span className="ml-auto flex gap-2">
-            <form action={toggleRewardAction.bind(null, reward.id)}>
-              <button
-                type="submit"
-                className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm hover:bg-[color:var(--color-komu-surface-raised)]"
-              >
-                {reward.enabled ? "Disable" : "Enable"}
-              </button>
-            </form>
-
-            <ConfirmButton action={deleteRewardAction.bind(null, reward.id)} question="This reward and its history will be removed." />
-          </span>
+              <form action={toggleRewardAction.bind(null, reward.id)}>
+                <button type="submit" className="komu-btn komu-btn-secondary min-h-8 px-2.5 py-1 text-[11px]">
+                  {reward.enabled ? "Pause" : "Enable"}
+                </button>
+              </form>
+              <ConfirmButton
+                action={deleteRewardAction.bind(null, reward.id)}
+                question="This reward and its history will be removed."
+              />
+            </div>
+          </div>
         </li>
       ))}
     </ul>
@@ -226,13 +301,13 @@ function ActionPicker({
   const [selected, setSelected] = useState(actionTypes[0]?.value ?? "");
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <Field label="Then">
+    <div className="grid gap-3 sm:grid-cols-2">
+      <FormField label="Action">
         <select
           name="actionType"
           value={selected}
           onChange={(event) => setSelected(event.target.value)}
-          className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+          className="komu-input"
         >
           {actionTypes.map((action) => (
             <option key={action.value} value={action.value}>
@@ -240,28 +315,28 @@ function ActionPicker({
             </option>
           ))}
         </select>
-      </Field>
+      </FormField>
 
       {selected === "GIVE_XP" ? (
-        <Field label="How much XP">
+        <FormField label="XP amount">
           <input
             name="xpAmount"
             type="number"
             min={1}
             defaultValue={500}
             required
-            className="w-28 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+            className="komu-input"
           />
-        </Field>
+        </FormField>
       ) : null}
 
       {selected === "ADD_ROLE" || selected === "REMOVE_ROLE" ? (
-        <Field label="Role">
+        <FormField label="Role">
           <select
             name="roleId"
             required
             defaultValue=""
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+            className="komu-input"
           >
             <option value="" disabled>
               Choose a role
@@ -272,16 +347,16 @@ function ActionPicker({
               </option>
             ))}
           </select>
-        </Field>
+        </FormField>
       ) : null}
 
       {selected === "UNLOCK_ACHIEVEMENT" ? (
-        <Field label="Achievement">
+        <FormField label="Achievement">
           <select
             name="achievementId"
             required
             defaultValue=""
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+            className="komu-input"
           >
             <option value="" disabled>
               {achievements.length === 0
@@ -294,19 +369,8 @@ function ActionPicker({
               </option>
             ))}
           </select>
-        </Field>
+        </FormField>
       ) : null}
     </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-        {label}
-      </span>
-      {children}
-    </label>
   );
 }

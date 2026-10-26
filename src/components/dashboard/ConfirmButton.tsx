@@ -42,8 +42,8 @@ export function ConfirmButton({
 
   // Armed: ask, then either confirm or step back.
   return (
-    <span className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-[color:var(--color-komu-muted)]">{question}</span>
+    <span className="flex flex-wrap items-center justify-end gap-2">
+      <span className="text-[11px] text-[color:var(--color-komu-muted)]">{question}</span>
 
       <form
         action={async () => {
@@ -53,10 +53,7 @@ export function ConfirmButton({
           await action();
         }}
       >
-        <button
-          type="submit"
-          className="rounded-md border border-[color:var(--color-komu-live)] px-3 py-1.5 text-sm text-[color:var(--color-komu-live)] transition hover:bg-[color:var(--color-komu-live)]/10"
-        >
+        <button type="submit" className={base}>
           {confirmLabel}
         </button>
       </form>
@@ -64,7 +61,7 @@ export function ConfirmButton({
       <button
         type="button"
         onClick={() => setArmed(false)}
-        className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm hover:bg-[color:var(--color-komu-surface-raised)]"
+        className="komu-btn komu-btn-secondary min-h-8 px-2.5 py-1 text-[11px]"
       >
         Cancel
       </button>
@@ -73,4 +70,4 @@ export function ConfirmButton({
 }
 
 const DEFAULT_CLASS =
-  "rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm text-[color:var(--color-komu-muted)] transition hover:border-[color:var(--color-komu-live)] hover:text-[color:var(--color-komu-live)]";
+  "komu-btn komu-btn-danger min-h-8 px-2.5 py-1 text-[11px]";

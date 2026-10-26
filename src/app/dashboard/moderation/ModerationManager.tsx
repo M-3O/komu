@@ -1,14 +1,25 @@
 "use client";
 
+import { Activity, Clock, Filter, Plus, Shield } from "lucide-react";
 import { useActionState, useState } from "react";
 
-  import {
+import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
+import {
+  Badge,
+  EmptyState,
+  FormField,
+  Panel,
+  StatusMessage,
+  cn,
+  formatDateTime,
+  initials,
+} from "@/components/dashboard/ui";
+import {
   createModerationRuleAction,
   deleteModerationRuleAction,
   toggleModerationRuleAction,
   type ModerationFormState,
 } from "./actions";
-import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 
 /**
  * Declared here rather than in actions.ts because a "use server" file may only
@@ -62,66 +73,88 @@ export function ModerationManager({
     INITIAL_MODERATION_STATE,
   );
 
+  const active = rules.filter((rule) => rule.enabled).length;
+
   return (
-    <div className="flex flex-col gap-8">
-      <RuleList rules={rules} />
-
-      <form action={formAction} className="flex flex-col gap-4">
-        <h2 className="font-semibold">Add a rule</h2>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Name">
-            <input
-              name="name"
-              required
-              placeholder="Word filter"
-              className="w-44 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-            />
-          </Field>
-
-          <Field label="Log to channel">
-            <select
-              name="logChannelId"
-              defaultValue=""
-              className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-            >
-              <option value="">No channel</option>
-              {channels.map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  {channel.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <RuleFields types={types} />
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="self-start rounded-lg bg-[color:var(--color-komu-accent)] px-5 py-2 font-medium text-white transition hover:bg-[color:var(--color-komu-accent-hover)] disabled:opacity-60"
+    <div className="flex flex-col gap-5">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_430px]">
+        <Panel
+          title="Protection rules"
+          description="Checked on every message and every join."
+          icon={Shield}
+          action={<Badge tone={active > 0 ? "success" : "neutral"}>{active} active</Badge>}
         >
-          {pending ? "Adding..." : "Add rule"}
-        </button>
+          <RuleList rules={rules} />
+        </Panel>
 
-        {state?.error ? (
-          <p
-            role="alert"
-            className="rounded-md border border-[color:var(--color-komu-live)] bg-[color:var(--color-komu-live)]/10 p-3 text-sm text-[color:var(--color-komu-live)]"
+        <div className="xl:sticky xl:top-24">
+          <Panel
+            title="Create a rule"
+            description="Pick one signal and the action it triggers."
+            icon={Plus}
           >
-            {state.error}
-          </p>
-        ) : null}
+            <form action={formAction} className="flex flex-col gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField label="Rule name">
+                  <input
+                    name="name"
+                    required
+                    placeholder="Word filter"
+                    className="komu-input"
+                  />
+                </FormField>
 
-        {state?.ok ? (
-          <p className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-3 text-sm">
-            Rule added. It applies to the next matching message or join.
-          </p>
-        ) : null}
-      </form>
+                <FormField label="Log to channel">
+                  <select
+                    name="logChannelId"
+                    defaultValue=""
+                    className="komu-input"
+                  >
+                    <option value="">No channel</option>
+                    {channels.map((channel) => (
+                      <option key={channel.id} value={channel.id}>
+                        {channel.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              </div>
 
-      <LogList log={log} />
+              <div className="rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-3">
+                <RuleFields types={types} />
+              </div>
+
+              <button
+                type="submit"
+                disabled={pending}
+                className="komu-btn komu-btn-primary"
+              >
+                <Plus className="h-4 w-4" />
+                {pending ? "Adding…" : "Add rule"}
+              </button>
+
+              {state?.error ? (
+                <StatusMessage tone="error">{state.error}</StatusMessage>
+              ) : null}
+              {state?.ok ? (
+                <StatusMessage tone="success">
+                  Rule added. It applies to the next matching message or join.
+                </StatusMessage>
+              ) : null}
+            </form>
+          </Panel>
+        </div>
+      </div>
+
+      <Panel
+        title="Recent moderation"
+        description="The latest actions taken by rules or moderators."
+        icon={Activity}
+        action={<Badge tone="neutral">{log.length} recent</Badge>}
+        flush
+      >
+        <LogList log={log} />
+      </Panel>
     </div>
   );
 }
@@ -129,43 +162,85 @@ export function ModerationManager({
 function RuleList({ rules }: { rules: RuleRow[] }) {
   if (rules.length === 0) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        No moderation rules yet. Add one below to filter, rate-limit or protect
-        against raids automatically.
-      </p>
+      <EmptyState
+        icon={Shield}
+        title="No moderation rules yet"
+        description="Add one to filter words, limit spam, or protect against join raids automatically."
+      />
     );
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-2.5">
       {rules.map((rule) => (
         <li
           key={rule.id}
-          className="flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4"
+          className={cn(
+            "rounded-xl border p-3.5 transition",
+            rule.enabled
+              ? "border-[color:var(--color-komu-border)] bg-white/[0.015]"
+              : "border-[color:var(--color-komu-border)] bg-white/[0.008] opacity-70",
+          )}
         >
-          <span className={rule.enabled ? "" : "opacity-50"}>
-            <span className="font-medium">{rule.name}</span>
-            <span className="block text-sm text-[color:var(--color-komu-muted)]">
-              {rule.summary}
+          <div className="flex flex-wrap items-start gap-3">
+            <span
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+                rule.enabled
+                  ? "border-emerald-400/20 bg-emerald-500/[0.08] text-emerald-300"
+                  : "border-[color:var(--color-komu-border-muted)] bg-white/[0.02] text-[color:var(--color-komu-dim)]",
+              )}
+            >
+              <Shield className="h-[18px] w-[18px]" />
             </span>
-            <span className="block text-xs text-[color:var(--color-komu-muted)]">
-              {rule.triggerCount} action{rule.triggerCount === 1 ? "" : "s"}
-              {rule.logChannel ? ` · logs to ${rule.logChannel}` : ""}
-            </span>
-          </span>
 
-          <span className="ml-auto flex gap-2">
-            <form action={toggleModerationRuleAction.bind(null, rule.id)}>
-              <button
-                type="submit"
-                className="rounded-md border border-[color:var(--color-komu-border)] px-3 py-1.5 text-sm hover:bg-[color:var(--color-komu-surface-raised)]"
-              >
-                {rule.enabled ? "Disable" : "Enable"}
-              </button>
-            </form>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-[color:var(--color-komu-text)]">
+                  {rule.name}
+                </p>
+                <Badge tone={rule.enabled ? "success" : "neutral"}>
+                  {rule.enabled ? "Active" : "Paused"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
+                {rule.summary}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[color:var(--color-komu-dim)]">
+                <span className="inline-flex items-center gap-1">
+                  <Activity className="h-3 w-3" />
+                  {rule.triggerCount.toLocaleString()} action
+                  {rule.triggerCount === 1 ? "" : "s"}
+                </span>
+                {rule.logChannel ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Filter className="h-3 w-3" />
+                    logs to #{rule.logChannel}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    no log channel
+                  </span>
+                )}
+              </div>
+            </div>
 
-            <ConfirmButton action={deleteModerationRuleAction.bind(null, rule.id)} question="This rule will be removed. Its past actions stay in the log." />
-          </span>
+            <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
+              <form action={toggleModerationRuleAction.bind(null, rule.id)}>
+                <button
+                  type="submit"
+                  className="komu-btn komu-btn-secondary min-h-8 px-2.5 py-1 text-[11px]"
+                >
+                  {rule.enabled ? "Pause" : "Enable"}
+                </button>
+              </form>
+              <ConfirmButton
+                action={deleteModerationRuleAction.bind(null, rule.id)}
+                question="This rule will be removed. Past actions stay in the log."
+              />
+            </div>
+          </div>
         </li>
       ))}
     </ul>
@@ -186,12 +261,15 @@ function RuleFields({ types }: { types: TypeOption[] }) {
   const [selected, setSelected] = useState(types[0]?.value ?? "");
   const [action, setAction] = useState(types[0]?.actions[0]?.value ?? "");
 
-  const actions = types.find((type) => type.value === selected)?.actions ?? types[0]?.actions ?? [];
+  const actions =
+    types.find((type) => type.value === selected)?.actions ??
+    types[0]?.actions ??
+    [];
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label="Watches for">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Watches for">
           <select
             name="type"
             value={selected}
@@ -200,7 +278,7 @@ function RuleFields({ types }: { types: TypeOption[] }) {
               const next = types.find((type) => type.value === event.target.value);
               setAction(next?.actions[0]?.value ?? "");
             }}
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+            className="komu-input"
           >
             {types.map((type) => (
               <option key={type.value} value={type.value}>
@@ -208,14 +286,14 @@ function RuleFields({ types }: { types: TypeOption[] }) {
               </option>
             ))}
           </select>
-        </Field>
+        </FormField>
 
-        <Field label="Action">
+        <FormField label="Action">
           <select
             name="action"
             value={action}
             onChange={(event) => setAction(event.target.value)}
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+            className="komu-input"
           >
             {actions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -223,55 +301,59 @@ function RuleFields({ types }: { types: TypeOption[] }) {
               </option>
             ))}
           </select>
-        </Field>
+        </FormField>
 
         {action === "TIMEOUT" ? (
-          <Field label="Timeout minutes">
+          <FormField label="Timeout minutes">
             <input
               name="actionDurationMins"
               type="number"
               min={1}
               defaultValue={10}
               required
-              className="w-28 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+              className="komu-input"
             />
-          </Field>
+          </FormField>
         ) : null}
       </div>
 
       {selected === "WORD_FILTER" ? (
-        <Field label="Blocked words or phrases (comma or newline separated)">
-          <textarea
-            name="blockedWords"
-            rows={3}
-            required
-            placeholder={"badword, spam-link\nfree nitro"}
-            className="w-full rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
-          />
-        </Field>
-      ) : null}
+        <>
+          <FormField
+            label="Blocked words or phrases"
+            hint="Comma or newline separated."
+          >
+            <textarea
+              name="blockedWords"
+              rows={3}
+              required
+              placeholder={"badword, spam-link\nfree nitro"}
+              className="komu-input"
+            />
+          </FormField>
 
-      {selected === "WORD_FILTER" ? (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="warnOnMatch" />
-          Also warn the member
-        </label>
+          <ToggleRow
+            name="warnOnMatch"
+            label="Also warn the member"
+            hint="A note is sent in the channel before the action is recorded."
+          />
+        </>
       ) : null}
 
       {selected === "SPAM" ? (
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Messages allowed">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField label="Messages allowed">
             <input
               name="messageLimit"
               type="number"
               min={1}
               defaultValue={5}
               required
-              className="w-28 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+              className="komu-input"
             />
-          </Field>
+          </FormField>
 
-          <Field label="Within seconds">
+          <FormField label="Within seconds">
             <input
               name="windowSeconds"
               type="number"
@@ -279,26 +361,26 @@ function RuleFields({ types }: { types: TypeOption[] }) {
               max={600}
               defaultValue={30}
               required
-              className="w-28 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+              className="komu-input"
             />
-          </Field>
+          </FormField>
         </div>
       ) : null}
 
       {selected === "RAID_PROTECTION" ? (
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Joins that trigger it">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField label="Joins that trigger it">
             <input
               name="joinThreshold"
               type="number"
               min={1}
               defaultValue={5}
               required
-              className="w-28 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+              className="komu-input"
             />
-          </Field>
+          </FormField>
 
-          <Field label="Within seconds">
+          <FormField label="Within seconds">
             <input
               name="joinWindowSeconds"
               type="number"
@@ -306,9 +388,9 @@ function RuleFields({ types }: { types: TypeOption[] }) {
               max={900}
               defaultValue={30}
               required
-              className="w-28 rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
+              className="komu-input"
             />
-          </Field>
+          </FormField>
         </div>
       ) : null}
     </div>
@@ -318,44 +400,101 @@ function RuleFields({ types }: { types: TypeOption[] }) {
 function LogList({ log }: { log: LogRow[] }) {
   if (log.length === 0) {
     return (
-      <p className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-4 text-sm text-[color:var(--color-komu-muted)]">
-        Nothing has been actioned yet.
-      </p>
+      <div className="p-5 sm:p-6">
+        <EmptyState
+          icon={Activity}
+          title="Nothing has been actioned yet"
+          description="A rule only appears here when it catches something."
+        />
+      </div>
     );
   }
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="font-semibold">Recent moderation</h2>
-
-      <ul className="flex flex-col gap-1">
-        {log.map((entry) => (
-          <li
-            key={`${entry.username}-${entry.createdAt}-${entry.type}`}
-            className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-4 py-2 text-sm"
-          >
-            <span className="font-medium">{entry.username}</span>
-            <span className="text-[color:var(--color-komu-muted)]">
-              {" — "}
-              {entry.type.replace(/_/g, " ").toLowerCase()}
-              {entry.reason ? ` · ${entry.reason}` : ""}
-              {" · by "}
-              {entry.moderator === "SYSTEM" ? "Komu" : entry.moderator}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div className="overflow-x-auto">
+      <table className="komu-table">
+        <thead>
+          <tr>
+            <th className="pl-5">Member</th>
+            <th>Action</th>
+            <th>Reason</th>
+            <th>Source</th>
+            <th className="pr-5 text-right">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {log.map((entry) => (
+            <tr key={`${entry.username}-${entry.createdAt}-${entry.type}`}>
+              <td className="pl-5">
+                <div className="flex items-center gap-2">
+                  <span className="komu-avatar komu-avatar-sm" aria-hidden>
+                    {initials(entry.username)}
+                  </span>
+                  <span className="text-xs font-medium text-[color:var(--color-komu-text)]">
+                    {entry.username}
+                  </span>
+                </div>
+              </td>
+              <td>
+                <Badge tone={logActionTone(entry.type)}>
+                  {actionLabel(entry.type)}
+                </Badge>
+              </td>
+              <td className="max-w-[280px]">
+                <span className="line-clamp-2 text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
+                  {entry.reason ?? "No reason recorded"}
+                </span>
+              </td>
+              <td className="text-[11px] text-[color:var(--color-komu-muted)]">
+                {entry.moderator === "SYSTEM" ? "Komu" : entry.moderator}
+              </td>
+              <td className="pr-5 text-right text-[10px] text-[color:var(--color-komu-dim)]">
+                {formatDateTime(entry.createdAt)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function ToggleRow({
+  name,
+  label,
+  hint,
+}: {
+  name: string;
+  label: string;
+  hint: string;
+}) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-        {label}
+    <label className="flex items-center justify-between gap-3 rounded-lg border border-[color:var(--color-komu-border)] bg-white/[0.015] px-3 py-2">
+      <span>
+        <span className="block text-xs font-medium text-[color:var(--color-komu-text)]">
+          {label}
+        </span>
+        <span className="mt-0.5 block text-[10px] leading-4 text-[color:var(--color-komu-dim)]">
+          {hint}
+        </span>
       </span>
-      {children}
+      <input type="checkbox" name={name} className="komu-switch" />
     </label>
   );
+}
+
+function actionLabel(type: string): string {
+  return type
+    .split("_")
+    .map((word) => `${word[0] ?? ""}${word.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function logActionTone(type: string): "danger" | "warning" | "accent" | "neutral" {
+  if (type === "BAN" || type === "KICK" || type === "DELETE_MESSAGE") {
+    return "danger";
+  }
+  if (type === "TIMEOUT" || type === "WARN") return "warning";
+  if (type === "MUTE") return "accent";
+  return "neutral";
 }

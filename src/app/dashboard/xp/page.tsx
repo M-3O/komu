@@ -1,5 +1,22 @@
+import {
+  Clock,
+  Gauge,
+  MessageSquare,
+  Shield,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react";
+import Link from "next/link";
 import { Suspense } from "react";
 
+import {
+  Badge,
+  MetricCard,
+  PageHeader,
+  Panel,
+  StatusMessage,
+} from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { xpForLevel } from "@/lib/levels/calculate-level";
@@ -19,16 +36,26 @@ const CURVE_PREVIEW_LEVELS = [2, 5, 10, 25, 50, 100];
  */
 export default function XpPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">XP &amp; Levels</h1>
-        <p className="text-sm text-[color:var(--color-komu-muted)]">
-          How much members earn for taking part, and how the anti-abuse rules
-          apply.
-        </p>
-      </header>
+    <div className="flex flex-col gap-7">
+      <PageHeader
+        eyebrow="Progression engine"
+        title="XP, levels & community progress"
+        description="Tune how much members earn for taking part, then see exactly what the anti-abuse rules allow."
+        actions={
+          <>
+            <Link href="/dashboard/leaderboards" className="komu-btn komu-btn-secondary">
+              <Trophy className="h-4 w-4" />
+              Leaderboard
+            </Link>
+            <Link href="/dashboard/roles" className="komu-btn komu-btn-primary">
+              <Shield className="h-4 w-4" />
+              Level roles
+            </Link>
+          </>
+        }
+      />
 
-      <Suspense fallback={<PanelSkeleton />}>
+      <Suspense fallback={<XpSkeleton />}>
         <XpPanel />
       </Suspense>
     </div>
@@ -52,106 +79,212 @@ async function XpPanel() {
     },
   });
 
+  const cooldown =
+    guild.xpMessageCooldownSecs > 0
+      ? `${Math.round((guild.xpMessageCooldownSecs / 60) * 10) / 10} min`
+      : "Off";
+
   return (
-    <div className="flex flex-col gap-8">
-      <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-6">
-        <XpSettingsForm
-          settings={{
-            xpEnabled: guild.xpEnabled,
-            xpMessageAmount: guild.xpMessageAmount,
-            xpMessageMinLength: guild.xpMessageMinLength,
-            xpMessageCooldownSecs: guild.xpMessageCooldownSecs,
-            xpDailyCap: guild.xpDailyCap,
-          }}
+    <div className="flex flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="XP per message"
+          value={`${guild.xpMessageAmount.toLocaleString()} XP`}
+          hint="For a qualifying message"
+          icon={Zap}
+          tone="accent"
         />
-      </section>
+        <MetricCard
+          label="Cooldown"
+          value={cooldown}
+          hint="Between XP-earning messages"
+          icon={Clock}
+          tone="violet"
+        />
+        <MetricCard
+          label="Daily cap"
+          value={
+            guild.xpDailyCap > 0 ? guild.xpDailyCap.toLocaleString() : "No cap"
+          }
+          hint="Per member, from messages"
+          icon={Gauge}
+          tone={guild.xpDailyCap > 0 ? "warning" : "neutral"}
+        />
+        <MetricCard
+          label="Members tracked"
+          value={guild._count.members.toLocaleString()}
+          hint="Profiles available for progression"
+          icon={Users}
+          tone="success"
+        />
+      </div>
 
-      <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-6">
-        <h2 className="font-semibold">The level curve</h2>
-        <p className="mt-1 text-sm text-[color:var(--color-komu-muted)]">
-          Total XP needed to reach each level. The curve is the same for every
-          server and cannot be configured.
-        </p>
+      <XpSettingsForm
+        settings={{
+          xpEnabled: guild.xpEnabled,
+          xpMessageAmount: guild.xpMessageAmount,
+          xpMessageMinLength: guild.xpMessageMinLength,
+          xpMessageCooldownSecs: guild.xpMessageCooldownSecs,
+          xpDailyCap: guild.xpDailyCap,
+        }}
+      />
 
-        <table className="mt-4 text-sm">
-          <thead>
-            <tr className="text-left text-xs tracking-wider text-[color:var(--color-komu-muted)] uppercase">
-              <th className="py-1 pr-6 font-medium">Level</th>
-              <th className="py-1 pr-6 font-medium">Total XP</th>
-              <th className="py-1 font-medium">Messages</th>
-            </tr>
-          </thead>
-          <tbody>
-            {CURVE_PREVIEW_LEVELS.map((level) => (
-              <tr key={level} className="border-t border-[color:var(--color-komu-border)]">
-                <td className="py-1.5 pr-6">{level}</td>
-                <td className="py-1.5 pr-6">{xpForLevel(level).toLocaleString()}</td>
-                <td className="py-1.5 text-[color:var(--color-komu-muted)]">
-                  {guild.xpMessageAmount > 0
-                    ? Math.ceil(xpForLevel(level) / guild.xpMessageAmount).toLocaleString()
-                    : "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <p className="mt-4 text-xs text-[color:var(--color-komu-muted)]">
-          The message column is how many messages that is worth at your current{" "}
-          {guild.xpMessageAmount} XP per message, ignoring cooldowns and the
-          daily cap.
-        </p>
-      </section>
-
-      <section className="rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] p-6">
-        <h2 className="font-semibold">Abuse prevention</h2>
-        <ul className="mt-2 flex list-inside list-disc flex-col gap-1.5 text-sm text-[color:var(--color-komu-muted)]">
-          <li>
-            Messages shorter than {guild.xpMessageMinLength} characters earn
-            nothing.
-          </li>
-          <li>
-            A member waits{" "}
-            {guild.xpMessageCooldownSecs > 0
-              ? `${Math.round(guild.xpMessageCooldownSecs / 60)} minute${guild.xpMessageCooldownSecs >= 120 ? "s" : ""}`
-              : "no time"}
-            {" "}between messages that earn XP.
-          </li>
-          <li>
-            Repeating the same message more than twice in a row stops earning
-            XP, so copy-paste spam does not count.
-          </li>
-          <li>
-            {guild.xpDailyCap > 0
-              ? `A member can earn ${guild.xpDailyCap.toLocaleString()} XP per day from messages.`
-              : "There is no daily cap on message XP."}{" "}
-            Rewards, challenges and achievements are not affected by it.
-          </li>
-        </ul>
-
-        {guild.xpEnabled ? null : (
-          <p className="mt-4 rounded-md border border-[color:var(--color-komu-live)] bg-[color:var(--color-komu-live)]/10 p-3 text-sm text-[color:var(--color-komu-live)]">
-            XP for messages is switched off. Members do not currently earn XP for
-            chatting, but attendance, rewards, challenges and achievements still
-            pay out.
+      <div className="grid gap-4 xl:grid-cols-12">
+        <Panel
+          className="xl:col-span-7"
+          title="The level curve"
+          description="Total XP needed to reach each milestone. The curve is the same for every server."
+          icon={Trophy}
+          action={<Badge tone="accent">6 milestones</Badge>}
+        >
+          <div className="overflow-x-auto">
+            <table className="komu-table">
+              <thead>
+                <tr>
+                  <th>Level</th>
+                  <th>Total XP</th>
+                  <th>Messages at current rate</th>
+                  <th className="text-right">Tier</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CURVE_PREVIEW_LEVELS.map((level, index) => (
+                  <tr key={level}>
+                    <td>
+                      <span className="flex items-center gap-2 font-display text-sm font-semibold text-[color:var(--color-komu-text)]">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-indigo-400/20 bg-indigo-500/10 text-[10px] text-indigo-300">
+                          {level}
+                        </span>
+                        Level {level}
+                      </span>
+                    </td>
+                    <td className="font-medium">
+                      {xpForLevel(level).toLocaleString()} XP
+                    </td>
+                    <td className="text-[color:var(--color-komu-muted)]">
+                      {guild.xpMessageAmount > 0
+                        ? Math.ceil(
+                            xpForLevel(level) / guild.xpMessageAmount,
+                          ).toLocaleString()
+                        : "—"}
+                    </td>
+                    <td className="text-right">
+                      <Badge tone={index < 2 ? "neutral" : index < 4 ? "accent" : "violet"}>
+                        {index < 2 ? "Early" : index < 4 ? "Core" : "Prestige"}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-4 text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
+            The message column is how many messages each level is worth at the
+            current {guild.xpMessageAmount.toLocaleString()} XP rate, ignoring
+            cooldowns and the daily cap.
           </p>
-        )}
-      </section>
+        </Panel>
 
-      <p className="text-xs text-[color:var(--color-komu-muted)]">
-        {guild._count.members.toLocaleString()} member
-        {guild._count.members === 1 ? "" : "s"} tracked. Switching XP off stops
-        new awards but keeps existing XP and levels, so nobody loses progress.
+        <Panel
+          className="xl:col-span-5"
+          title="Abuse prevention"
+          description="The guardrails applied before XP is written."
+          icon={Shield}
+        >
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+            <GuardrailCard
+              icon={MessageSquare}
+              label="Minimum length"
+              value={`${guild.xpMessageMinLength} characters`}
+              detail="Shorter messages earn nothing."
+            />
+            <GuardrailCard
+              icon={Clock}
+              label="Cooldown"
+              value={
+                guild.xpMessageCooldownSecs > 0
+                  ? `${Math.round((guild.xpMessageCooldownSecs / 60) * 10) / 10} minutes`
+                  : "No wait"
+              }
+              detail="Time between XP-earning messages."
+            />
+            <GuardrailCard
+              icon={Shield}
+              label="Duplicate filter"
+              value="2 repeats max"
+              detail="Copy-paste spam stops earning XP."
+            />
+            <GuardrailCard
+              icon={Gauge}
+              label="Daily ceiling"
+              value={
+                guild.xpDailyCap > 0
+                  ? `${guild.xpDailyCap.toLocaleString()} XP`
+                  : "Unlimited"
+              }
+              detail="Rewards and challenges are not affected."
+            />
+          </div>
+
+          {guild.xpEnabled ? null : (
+            <div className="mt-4">
+              <StatusMessage tone="error">
+                XP for messages is switched off. Members do not currently earn
+                XP for chatting, but attendance, rewards, challenges and
+                achievements still pay out.
+              </StatusMessage>
+            </div>
+          )}
+
+          <p className="mt-4 border-t border-[color:var(--color-komu-border)] pt-3 text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
+            Switching XP off stops new awards but keeps existing XP and levels,
+            so nobody loses progress.
+          </p>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function GuardrailCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof Shield;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-3">
+      <div className="flex items-center gap-2">
+        <Icon className="h-3.5 w-3.5 text-indigo-300" />
+        <p className="komu-label text-[9px]">{label}</p>
+      </div>
+      <p className="mt-1.5 font-display text-sm font-semibold text-[color:var(--color-komu-text)]">
+        {value}
+      </p>
+      <p className="mt-0.5 text-[10px] leading-4 text-[color:var(--color-komu-dim)]">
+        {detail}
       </p>
     </div>
   );
 }
 
-function PanelSkeleton() {
+function XpSkeleton() {
   return (
-    <div
-      className="h-96 animate-pulse rounded-lg border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
-      aria-hidden
-    />
+    <div className="flex flex-col gap-6" aria-hidden>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]"
+          />
+        ))}
+      </div>
+      <div className="h-96 animate-pulse rounded-2xl border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)]" />
+    </div>
   );
 }
