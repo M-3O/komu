@@ -103,12 +103,13 @@ export function AlertsWorkspace({
           >
             <div className="rounded-xl bg-[#313338] p-3.5 text-[#dbdee1] shadow-inner">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#050505] ring-1 ring-white/10">
+                <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-[#050505] ring-1 ring-white/10">
                   <Image
-                    src="/brand/komu-logo.webp"
+                    src="/brand/komu-avatar.webp"
                     alt=""
-                    width={64}
-                    height={64}
+                    width={80}
+                    height={80}
+                    sizes="40px"
                     className="h-full w-full object-cover"
                   />
                 </span>

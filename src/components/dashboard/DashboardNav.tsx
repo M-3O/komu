@@ -86,14 +86,15 @@ function Drawer({ pathname }: { pathname: string }) {
             onClick={() => setOpen(false)}
             className="flex items-center gap-2.5"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 p-px shadow-[0_0_22px_-6px_rgba(99,102,241,.8)]">
-              <span className="flex h-full w-full overflow-hidden rounded-[7px] bg-[#050505]">
+            <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 via-violet-500 to-fuchsia-500 p-[2px] shadow-[0_0_34px_-6px_rgba(139,92,246,0.9)]">
+              <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-[#050505] ring-1 ring-white/15">
                 <Image
-                  src="/brand/komu-logo.webp"
+                  src="/brand/komu-avatar.webp"
                   alt=""
-                  width={64}
-                  height={64}
-                  className="h-full w-full object-cover"
+                  width={104}
+                  height={104}
+                  sizes="52px"
+                  className="h-full w-full rounded-full object-cover"
                 />
               </span>
             </span>
