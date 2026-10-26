@@ -17,8 +17,8 @@ import type { StreamInfo } from "@/lib/streams/types";
 
 const KICK_BASE = "https://kick.com";
 
-/** Kick slugs are lowercase letters, digits and underscores. */
-const SLUG = /^[a-z0-9_]+$/;
+/** Kick slugs are lowercase letters, digits, hyphens and underscores. */
+const SLUG = /^[a-z0-9_-]+$/;
 
 /**
  * Pull a slug out of whatever the creator pasted.
@@ -32,8 +32,9 @@ export function parseChannelIdentifier(raw: string): string | null {
 
   if (!trimmed) return null;
 
-  // Any URL with the slug in the path.
-  const fromUrl = trimmed.match(/kick\.com\/(?:[^/]+\/)?([a-z0-9_]+)/);
+  // Any URL with the slug in the path. Kick slugs can contain hyphens, e.g.
+  // kick.com/ab0-jabal.
+  const fromUrl = trimmed.match(/kick\.com\/(?:[^/]+\/)?([a-z0-9_-]+)/);
 
   if (fromUrl) return fromUrl[1];
 

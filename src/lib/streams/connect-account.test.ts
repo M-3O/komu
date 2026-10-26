@@ -102,7 +102,8 @@ describe("connectStreamingAccount", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No KICK channel found for "nobody".',
+      error:
+        'No KICK channel found for "nobody". Use the slug from the channel URL (the part after kick.com/).',
     });
   });
 

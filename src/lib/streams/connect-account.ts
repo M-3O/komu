@@ -89,9 +89,17 @@ export async function connectStreamingAccount(
   // An empty result means the channel does not exist, which is a typo rather
   // than an outage.
   if (!resolved) {
+    // Kick's display name is not always its slug: "AB0_JABAL" lives at
+    // kick.com/ab0-jabal. Point at the URL rather than leaving the creator to
+    // guess which separator the slug uses.
+    const hint =
+      provider === StreamingProvider.KICK
+        ? " Use the slug from the channel URL (the part after kick.com/)."
+        : "";
+
     return {
       ok: false,
-      error: `No ${provider} channel found for "${trimmed}".`,
+      error: `No ${provider} channel found for "${trimmed}".${hint}`,
     };
   }
 

@@ -48,11 +48,22 @@ describe("parseChannelIdentifier", () => {
     expect(parseChannelIdentifier("https://kick.com/auronplay?fcp")).toBe("auronplay");
   });
 
+  it("accepts a hyphenated slug", () => {
+    // Kick turns some display names into hyphenated slugs: the channel
+    // "AB0_JABAL" lives at kick.com/ab0-jabal.
+    expect(parseChannelIdentifier("ab0-jabal")).toBe("ab0-jabal");
+    expect(parseChannelIdentifier("AB0-JABAL")).toBe("ab0-jabal");
+    expect(parseChannelIdentifier("@ab0-jabal")).toBe("ab0-jabal");
+    expect(parseChannelIdentifier("https://kick.com/ab0-jabal")).toBe(
+      "ab0-jabal",
+    );
+  });
+
   it("returns null for nothing usable", () => {
     expect(parseChannelIdentifier("")).toBeNull();
     expect(parseChannelIdentifier("   ")).toBeNull();
     expect(parseChannelIdentifier("has spaces")).toBeNull();
-    expect(parseChannelIdentifier("dash-and-dot")).toBeNull();
+    expect(parseChannelIdentifier("dot.name")).toBeNull();
   });
 });
 

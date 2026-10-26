@@ -137,6 +137,10 @@ read-only `channel:read` and `livestream:read` scopes, then set
 `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET`. The client-credentials grant does
 not request scopes at token time; Kick takes them from the application.
 
+When connecting a channel, use the slug from its URL. For example,
+`kick.com/ab0-jabal` connects with `ab0-jabal`; the slug can contain hyphens
+even when the display name uses underscores.
+
 ## Stream alerts
 
 Configure alerts on `/dashboard/alerts`. Channel and role lists come from
