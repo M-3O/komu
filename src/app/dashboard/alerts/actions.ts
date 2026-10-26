@@ -1,6 +1,6 @@
 "use server";
 
-import { AlertMessageMode } from "@prisma/client";
+import { AlertMessageMode, StreamingProvider } from "@prisma/client";
 import { refresh } from "next/cache";
 
 import { requireGuild } from "@/lib/dashboard/require-guild";
@@ -10,8 +10,11 @@ import {
   type AlertSettings,
 } from "@/lib/streams/build-alert-message";
 import { sendChannelMessage } from "@/lib/discord/rest";
+import { buildChannelUrl as buildKickChannelUrl } from "@/lib/kick/normalize";
 import { createLogger } from "@/lib/logger";
+import { buildChannelUrl as buildTwitchChannelUrl } from "@/lib/twitch/normalize";
 import { INPUT_LIMITS } from "@/lib/validation/limits";
+import { buildChannelUrl as buildYouTubeChannelUrl } from "@/lib/youtube/normalize";
 
 /**
  * Stream alert configuration actions.
@@ -23,6 +26,21 @@ import { INPUT_LIMITS } from "@/lib/validation/limits";
  */
 
 const log = createLogger("stream");
+
+/**
+ * The sample's link has to match the account's provider.
+ *
+ * These builders are the same ones the adapters use, so a test alert cannot
+ * quietly point a YouTube or Kick creator at twitch.tv.
+ */
+const CHANNEL_URL_BUILDERS: Record<
+  StreamingProvider,
+  (username: string) => string
+> = {
+  [StreamingProvider.TWITCH]: buildTwitchChannelUrl,
+  [StreamingProvider.YOUTUBE]: buildYouTubeChannelUrl,
+  [StreamingProvider.KICK]: buildKickChannelUrl,
+};
 
 export interface AlertFormState {
   ok?: boolean;
@@ -185,7 +203,7 @@ export async function sendTestAlertAction(
     game: "Sample category",
     thumbnail: null,
     viewerCount: 1234,
-    url: "https://www.twitch.tv/",
+    url: CHANNEL_URL_BUILDERS[account.provider](account.username),
     startedAt: new Date(),
   };
 
