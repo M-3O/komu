@@ -9,6 +9,7 @@ import {
   connectStreamingAccount,
   disconnectStreamingAccount,
 } from "@/lib/streams/connect-account";
+import { isProviderAvailable } from "@/lib/streams/registry";
 
 /**
  * Channel management actions.
@@ -20,8 +21,6 @@ import {
 
 const log = createLogger("stream");
 
-const SUPPORTED_PROVIDERS: StreamingProvider[] = [StreamingProvider.TWITCH];
-
 /** The single connected server, which every account is scoped to. */
 async function requireGuildId(): Promise<string> {
   const guild = await requireGuild("/dashboard/streams");
@@ -29,7 +28,10 @@ async function requireGuildId(): Promise<string> {
 }
 
 function isSupportedProvider(value: string): value is StreamingProvider {
-  return SUPPORTED_PROVIDERS.includes(value as StreamingProvider);
+  // Ask the registry rather than keeping a second list here. The list was what
+  // hid YouTube and Kick: their adapters existed, but the action refused them
+  // with "not supported yet" long after they were implemented.
+  return isProviderAvailable(value as StreamingProvider);
 }
 
 export interface ChannelActionResult {

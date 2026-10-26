@@ -20,6 +20,13 @@ interface ChannelFormState {
 
 const INITIAL_STATE: ChannelFormState = {};
 
+/** Display names for the providers the registry exposes. */
+const PROVIDER_LABELS: Record<string, string> = {
+  TWITCH: "Twitch",
+  YOUTUBE: "YouTube",
+  KICK: "Kick",
+};
+
 /**
  * Connect a streaming channel, and disconnect one that is no longer wanted.
  *
@@ -125,7 +132,7 @@ export function ChannelManager({
             >
               {availableProviders.map((provider) => (
                 <option key={provider} value={provider}>
-                  {provider}
+                  {PROVIDER_LABELS[provider] ?? provider}
                 </option>
               ))}
             </select>
@@ -138,7 +145,7 @@ export function ChannelManager({
             <input
               name="identifier"
               required
-              placeholder="twitch login or channel id"
+              placeholder="name, channel id or URL"
               className="rounded-md border border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-surface)] px-3 py-2"
             />
           </label>
@@ -151,6 +158,12 @@ export function ChannelManager({
             {pending ? "Connecting..." : "Connect"}
           </button>
         </div>
+
+        <p className="text-xs text-[color:var(--color-komu-muted)]">
+          Twitch login, YouTube channel id or @handle, or Kick slug. A profile
+          URL works too. YouTube checks use API quota, so keep the poll interval
+          at 300 seconds or more when watching a YouTube channel.
+        </p>
 
         {state?.error ? (
           <p

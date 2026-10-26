@@ -31,6 +31,26 @@ export interface ConnectAccountResult {
 }
 
 /**
+ * The provider's own message when it is missing credentials, or null for any
+ * other failure.
+ *
+ * "Add KICK_CLIENT_ID to .env.local" is actionable; "Could not reach KICK"
+ * sends the creator looking for a network problem that does not exist. Every
+ * provider marks that case with the same code, so the check stays generic.
+ */
+function configurationMessage(error: unknown): string | null {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "NOT_CONFIGURED"
+  ) {
+    return error.message;
+  }
+
+  return null;
+}
+
+/**
  * Look up a channel with the provider and store it against the guild.
  *
  * Re-connecting the same channel updates the stored row instead of creating
@@ -52,13 +72,17 @@ export async function connectStreamingAccount(
   try {
     resolved = await adapter.getAccount(trimmed);
   } catch (error) {
+    const configuration = configurationMessage(error);
+
     log.error("Provider lookup failed while connecting", {
       provider,
       reason: error instanceof Error ? error.message : "unknown",
     });
+
     return {
       ok: false,
-      error: `Could not reach ${provider}. Try again in a moment.`,
+      error:
+        configuration ?? `Could not reach ${provider}. Try again in a moment.`,
     };
   }
 
