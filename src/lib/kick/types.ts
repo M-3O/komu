@@ -1,9 +1,10 @@
 /**
  * Raw Kick public API v1 response shapes.
  *
- * Kick wraps everything in a `data` envelope and returns HTTP 200 with a
- * `message` and no `data` when a channel does not exist, so the client has to
- * check the body rather than the status code.
+ * Verified against `GET /public/v1/channels?slug=...`, which wraps the result
+ * in a `data` array. Kick answers a missing channel with HTTP 200, an empty
+ * `data` array and sometimes a `message`, so the client checks the body rather
+ * than the status code.
  */
 
 export interface KickEnvelope<T> {
@@ -14,28 +15,32 @@ export interface KickEnvelope<T> {
   error?: string | { message?: string; code?: string };
 }
 
+/** One channel from `GET /public/v1/channels?slug=...`. */
 export interface KickChannel {
-  id?: string;
-  /** Stable user id. Changes never. */
-  user_id?: string;
-  /** The slug used in URLs, e.g. "auronplay". */
+  /** Stable numeric user id. The login can change; this cannot. */
+  broadcaster_user_id?: number;
+  /** The login slug used in URLs, e.g. "xqc". */
   slug?: string;
-  username?: string;
-  user?: { username?: string; profile_pic?: string; bio?: string };
-  profile_pic?: string;
-  /** Only present while the channel is live. */
-  livestream?: KickLivestream | null;
-  is_banned?: boolean;
+  channel_description?: string;
+  banner_picture?: string;
+  /** Empty string while offline. */
+  stream_title?: string;
+  category?: { id?: number; name?: string; thumbnail?: string } | null;
+  /** Always present; `is_live` is false while offline. */
+  stream?: KickStream | null;
 }
 
-export interface KickLivestream {
-  /** Changes per broadcast. Used as the de-duplication key. */
-  id?: string;
-  session_title?: string;
+/** The broadcast block inside a channel response. */
+export interface KickStream {
   is_live?: boolean;
-  /** ISO 8601. */
+  is_mature?: boolean;
+  language?: string;
+  /**
+   * ISO 8601. Kick exposes no per-broadcast id, so this is the only stable
+   * key for one stream session.
+   */
   start_time?: string;
   viewer_count?: number;
-  language?: string;
-  slug?: string;
+  thumbnail?: string;
+  url?: string;
 }

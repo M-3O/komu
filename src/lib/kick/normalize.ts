@@ -7,10 +7,12 @@ import type { StreamInfo } from "@/lib/streams/types";
  * Pure functions with no network access, so the awkward parts of Kick's
  * contract are unit tested:
  *
- *   - A channel response carries `livestream` only while the channel is live,
- *     so "offline" is an absent field rather than a flag.
- *   - `is_live` exists but is not the authority; the field's presence is.
- *   - Kick returns 200 with an error body for a channel that does not exist.
+ *   - A channel response always carries a `stream` block. `is_live` is the
+ *     authority; the block's presence is not, because it stays after the
+ *     broadcast ends.
+ *   - Kick exposes no per-broadcast id, so the stream's start time identifies
+ *     one session.
+ *   - A missing channel is an empty `data` array, not an HTTP error.
  */
 
 const KICK_BASE = "https://kick.com";
@@ -63,16 +65,6 @@ export function buildChannelUrl(slug: string): string {
   return `${KICK_BASE}/${slug}`;
 }
 
-/**
- * The channel's profile picture.
- *
- * The field sits at two levels depending on the endpoint version, so both are
- * checked rather than one silently rendering a broken image.
- */
-export function pickAvatar(channel: KickChannel): string | null {
-  return orNull(channel.profile_pic) ?? orNull(channel.user?.profile_pic);
-}
-
 /** The account shape, or null when the response holds no usable channel. */
 export function normalizeChannel(channel: KickChannel): {
   providerUserId: string;
@@ -80,58 +72,69 @@ export function normalizeChannel(channel: KickChannel): {
   displayName: string | null;
   avatarUrl: string | null;
 } | null {
-  const userId = orNull(channel.user_id);
-  const slug = orNull(channel.slug) ?? orNull(channel.username);
+  const userId =
+    typeof channel.broadcaster_user_id === "number"
+      ? String(channel.broadcaster_user_id)
+      : null;
+  const slug = orNull(channel.slug);
 
   // A channel with neither cannot be queried again, so it is not an account.
   if (!userId || !slug) return null;
 
   return {
-    // The user id is the stable key. The slug can change if the creator
+    // The broadcaster id is the stable key. The slug can change if the creator
     // renames their channel, which would otherwise break the connection.
     providerUserId: userId,
     username: slug,
-    displayName: orNull(channel.username) ?? slug,
-    avatarUrl: pickAvatar(channel),
+    // Kick's channel response has no display name separate from the slug, and
+    // `banner_picture` is a banner rather than an avatar. Use the slug and no
+    // image instead of showing something wrong.
+    displayName: slug,
+    avatarUrl: null,
   };
 }
 
 /**
  * The live broadcast from a channel response, or null.
  *
- * A `livestream` block is only present while the channel is live. The
- * `is_live` flag is checked too, because relying on presence alone would treat
- * a `livestream` with `is_live: false` as live.
+ * `is_live` is checked explicitly: the `stream` block is present while a
+ * channel is offline, so treating presence as "live" would alert forever.
  */
 export function normalizeLivestream(
   channel: KickChannel,
-  account: { providerUserId: string; username: string; displayName: string | null },
+  account: {
+    providerUserId: string;
+    username: string;
+    displayName: string | null;
+  },
 ): Omit<StreamInfo, "provider"> | null {
-  const livestream = channel.livestream;
+  const stream = channel.stream;
 
-  if (!livestream) return null;
-  if (livestream.is_live === false) return null;
+  if (!stream || stream.is_live !== true) return null;
 
-  const streamId = orNull(livestream.id);
+  const startedAt = toDate(stream.start_time);
 
-  if (!streamId) return null;
+  // With no start time there is no stable key for this broadcast, and using a
+  // constant would collapse every stream into the first alert. Skipping is
+  // safer than alerting on every poll.
+  if (!startedAt) return null;
 
   return {
     creatorId: account.providerUserId,
     creatorUsername: account.username,
     creatorDisplayName: account.displayName,
-    // The livestream id changes per broadcast, which is what alert
-    // de-duplication needs.
-    providerStreamId: streamId,
-    title: orNull(livestream.session_title),
-    // Kick has no category or game field.
-    game: null,
-    // Kick's own thumbnail is not part of the public response, so no image is
-    // offered rather than a guessed URL that would 404.
-    thumbnail: null,
+    // The start time changes per broadcast, which is what alert de-duplication
+    // needs, and stays fixed for the whole broadcast.
+    providerStreamId: startedAt.toISOString(),
+    title: orNull(channel.stream_title),
+    game: orNull(channel.category?.name),
+    thumbnail: orNull(stream.thumbnail),
     viewerCount:
-      typeof livestream.viewer_count === "number" ? livestream.viewer_count : null,
+      typeof stream.viewer_count === "number" &&
+      Number.isFinite(stream.viewer_count)
+        ? stream.viewer_count
+        : null,
     url: buildChannelUrl(account.username),
-    startedAt: toDate(livestream.start_time),
+    startedAt,
   };
 }

@@ -18,8 +18,7 @@ import {
  * Kick implementation of the provider interface.
  *
  * Same shape as the Twitch and YouTube adapters. Kick needs only one request
- * per check, because the channel response already carries the livestream when
- * the channel is live.
+ * per check, because the channel response always carries the broadcast state.
  */
 export const kickAdapter: StreamingProviderAdapter = {
   provider: StreamingProvider.KICK,

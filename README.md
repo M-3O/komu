@@ -132,9 +132,10 @@ a YouTube channel is live costs 101 quota units per poll.
 
 ### Kick setup
 
-Create an application at <https://kick.com/settings/developer> and set
-`KICK_CLIENT_ID` and `KICK_CLIENT_SECRET`. Komu requests only the read-only
-`channel:read` and `livestream:read` scopes.
+Create an application at <https://kick.com/settings/developer> with the
+read-only `channel:read` and `livestream:read` scopes, then set
+`KICK_CLIENT_ID` and `KICK_CLIENT_SECRET`. The client-credentials grant does
+not request scopes at token time; Kick takes them from the application.
 
 ## Stream alerts
 
@@ -703,7 +704,7 @@ stream as live, so a longer interval delays the alert rather than losing it.
 
 ### Both new providers authenticate without the creator's account
 
-Twitch uses an app token, YouTube an API key (the client id), and Kick the
+Twitch uses an app token, YouTube an API key, and Kick the
 application's client credentials with read-only scopes. In every case the
 creator never has to connect their streaming account to Komu, and neither
 `channel:write` nor any equivalent is ever requested.
@@ -712,14 +713,17 @@ creator never has to connect their streaming account to Komu, and neither
 
 | | Twitch | YouTube | Kick |
 | --- | --- | --- | --- |
-| Category / game | yes | no | no |
+| Category / game | yes | no | yes |
 | Viewer count | yes | yes | yes |
-| Thumbnail | yes | yes | no |
+| Thumbnail | yes | yes | yes |
 | Start time | yes | yes | yes |
 
 Where a provider has no field, `StreamInfo` gets `null` rather than a guessed
 URL. A guessed thumbnail would render as a broken image, which is worse than an
 absent one.
+
+Kick returns no display name or avatar for the channel; the slug is shown as the
+name and the avatar stays `null` rather than borrowing the banner image.
 
 YouTube thumbnails are walked largest-first because `maxres` only exists for
 high-resolution uploads, so picking a fixed key would hand a 120px image for most
@@ -732,9 +736,10 @@ to `Bob's Stream` before it reaches Discord.
 - **YouTube** keeps `liveStreamingDetails` on a broadcast *after* it ends, so
   presence of that block is not enough — an `actualEndTime` means it finished.
   Without that check every past stream would re-alert.
-- **Kick** only includes a `livestream` block while the channel is live, so
-  absence is the signal. `is_live` is checked as well, in case a block is
-  present but stale.
+- **Kick** always returns a `stream` block. `is_live` is the authority, not the
+  block's presence: a finished broadcast keeps the block with `is_live: false`,
+  so presence alone would re-alert forever. Kick publishes no per-broadcast id,
+  so the stream's start time is used to recognise one session.
 
 ## Tests
 

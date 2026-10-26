@@ -21,14 +21,6 @@ import type { KickChannel, KickEnvelope } from "./types";
 const API_BASE = "https://api.kick.com/public/v1";
 const TOKEN_URL = "https://id.kick.com/oauth/token";
 
-/**
- * Read-only scopes.
- *
- * Neither `channel:write` nor anything that can act on the creator's account
- * is requested: Komu only ever asks whether a channel is live.
- */
-const SCOPES = ["channel:read", "livestream:read"];
-
 const RATE_LIMIT_STATUS = 429;
 
 const log = createLogger("stream");
@@ -109,12 +101,14 @@ async function getAccessToken(): Promise<string> {
 
     const response = await request(TOKEN_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      // Kick takes this grant as form data; a JSON body is answered with a
+      // bare 400. Do not add `scope`: Kick rejects it with `invalid_scope`
+      // and takes the app's scopes from the developer dashboard instead.
+      body: new URLSearchParams({
         grant_type: "client_credentials",
         client_id: clientId,
         client_secret: clientSecret,
-        scope: SCOPES.join(" "),
       }),
     }, "token");
 
@@ -176,8 +170,9 @@ async function apiGet<T>(path: string): Promise<T | null> {
     );
   }
 
-  // Kick answers a missing channel with 404, which is a normal "no such
-  // channel" rather than a failure worth surfacing.
+  // A missing channel is a normal "no such channel" rather than a failure
+  // worth surfacing. Depending on the endpoint Kick answers 404 or an empty
+  // `data` array.
   if (response.status === 404) return null;
 
   if (!response.ok) {
@@ -195,8 +190,13 @@ async function apiGet<T>(path: string): Promise<T | null> {
 }
 
 /** One channel by slug. Null when the channel does not exist. */
-export function getChannel(slug: string): Promise<KickChannel | null> {
-  return apiGet<KickChannel>(`/channels/${encodeURIComponent(slug)}`);
+export async function getChannel(slug: string): Promise<KickChannel | null> {
+  // The API filters by query string; `/channels/{slug}` answers 404.
+  const channels = await apiGet<KickChannel[]>(
+    `/channels?slug=${encodeURIComponent(slug)}`,
+  );
+
+  return channels?.[0] ?? null;
 }
 
 /** Drop the cached token. Used by tests and by the reconnect path. */

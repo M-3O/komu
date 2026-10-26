@@ -5,22 +5,24 @@ import {
   normalizeChannel,
   normalizeLivestream,
   parseChannelIdentifier,
-  pickAvatar,
 } from "./normalize";
 import type { KickChannel } from "./types";
 
 /**
- * Kick normalisation.
+ * Kick normalisation, using the shapes the public API actually returns.
  *
- * The case that matters most is the finished broadcast: Kick drops the
- * `livestream` block when a channel goes offline, so absence is the signal,
- * and an alert fired on presence alone would re-fire for every past stream.
+ * Verified against `GET /public/v1/channels?slug=...`:
+ *
+ *   - the stable id is `broadcaster_user_id`, a number;
+ *   - the login is `slug`, with no separate display name or avatar;
+ *   - a `stream` block is always present, and `is_live` says whether it runs;
+ *   - there is no per-broadcast id, so `start_time` keys one session.
  */
 
 const ACCOUNT = {
-  providerUserId: "1234",
-  username: "auronplay",
-  displayName: "AuronPlay",
+  providerUserId: "676",
+  username: "xqc",
+  displayName: "xqc",
 };
 
 describe("parseChannelIdentifier", () => {
@@ -54,22 +56,6 @@ describe("parseChannelIdentifier", () => {
   });
 });
 
-describe("pickAvatar", () => {
-  it("reads the top-level field", () => {
-    expect(pickAvatar({ profile_pic: "a.jpg" })).toBe("a.jpg");
-  });
-
-  it("falls back to the nested field", () => {
-    // The field sits at two levels depending on the endpoint version.
-    expect(pickAvatar({ user: { profile_pic: "b.jpg" } })).toBe("b.jpg");
-  });
-
-  it("returns null when there is no picture", () => {
-    expect(pickAvatar({})).toBeNull();
-    expect(pickAvatar({ profile_pic: "" })).toBeNull();
-  });
-});
-
 describe("buildChannelUrl", () => {
   it("builds the channel page", () => {
     expect(buildChannelUrl("auronplay")).toBe("https://kick.com/auronplay");
@@ -77,36 +63,30 @@ describe("buildChannelUrl", () => {
 });
 
 describe("normalizeChannel", () => {
-  it("prefers the user id as the stable key", () => {
+  it("uses the numeric broadcaster id as the stable key", () => {
     // The slug can change if the creator renames the channel, which would
     // otherwise break a stored connection.
     const account = normalizeChannel({
-      user_id: "1234",
-      slug: "auronplay",
-      username: "AuronPlay",
-      profile_pic: "a.jpg",
+      broadcaster_user_id: 676,
+      slug: "xqc",
+      channel_description: "THE BEST AT ABSOLUTELY EVERYTHING.",
     });
 
     expect(account).toEqual({
-      providerUserId: "1234",
-      username: "auronplay",
-      displayName: "AuronPlay",
-      avatarUrl: "a.jpg",
+      providerUserId: "676",
+      username: "xqc",
+      // Kick returns no display name and no avatar.
+      displayName: "xqc",
+      avatarUrl: null,
     });
   });
 
-  it("falls back to username when there is no slug", () => {
-    const account = normalizeChannel({ user_id: "1234", username: "auronplay" });
-    expect(account?.username).toBe("auronplay");
+  it("returns null without a broadcaster id, which cannot be queried again", () => {
+    expect(normalizeChannel({ slug: "xqc" })).toBeNull();
   });
 
-  it("falls back to the slug when there is no username", () => {
-    const account = normalizeChannel({ user_id: "1234", slug: "auronplay" });
-    expect(account?.displayName).toBe("auronplay");
-  });
-
-  it("returns null without an id, which cannot be queried again", () => {
-    expect(normalizeChannel({ slug: "auronplay" })).toBeNull();
+  it("returns null without a slug", () => {
+    expect(normalizeChannel({ broadcaster_user_id: 676 })).toBeNull();
   });
 
   it("returns null for an empty response", () => {
@@ -116,54 +96,76 @@ describe("normalizeChannel", () => {
 
 describe("normalizeLivestream", () => {
   const liveChannel = (overrides: Partial<KickChannel> = {}): KickChannel => ({
-    user_id: "1234",
-    slug: "auronplay",
-    username: "AuronPlay",
-    livestream: {
-      id: "9999",
-      session_title: "Ranked grind",
+    broadcaster_user_id: 676,
+    slug: "xqc",
+    stream_title: "24 Hour Stream ft. Wardrobe",
+    category: { id: 15, name: "IRL" },
+    stream: {
       is_live: true,
-      start_time: "2024-05-17T10:00:00Z",
-      viewer_count: 420,
+      is_mature: false,
+      language: "en",
+      start_time: "2026-10-25T22:46:20Z",
+      viewer_count: 34248,
+      thumbnail: "https://images.kick.com/video_thumbnails/abc/480.webp",
+      url: "",
     },
     ...overrides,
   });
 
-  it("normalises a live stream", () => {
+  it("normalises a live stream from the real channel payload", () => {
     expect(normalizeLivestream(liveChannel(), ACCOUNT)).toMatchObject({
-      creatorId: "1234",
-      creatorUsername: "auronplay",
-      providerStreamId: "9999",
-      title: "Ranked grind",
-      viewerCount: 420,
-      url: "https://kick.com/auronplay",
-      startedAt: new Date("2024-05-17T10:00:00Z"),
+      creatorId: "676",
+      creatorUsername: "xqc",
+      creatorDisplayName: "xqc",
+      providerStreamId: "2026-10-25T22:46:20.000Z",
+      title: "24 Hour Stream ft. Wardrobe",
+      game: "IRL",
+      thumbnail: "https://images.kick.com/video_thumbnails/abc/480.webp",
+      viewerCount: 34248,
+      url: "https://kick.com/xqc",
+      startedAt: new Date("2026-10-25T22:46:20Z"),
     });
   });
 
-  it("has no game and no thumbnail", () => {
-    const result = normalizeLivestream(liveChannel(), ACCOUNT);
-
-    // Kick reports neither in the public API, and a guessed URL would 404.
-    expect(result?.game).toBeNull();
-    expect(result?.thumbnail).toBeNull();
-  });
-
-  it("returns null when the livestream block is absent", () => {
-    // This is how Kick says "offline": the field simply is not there.
-    expect(normalizeLivestream({ slug: "auronplay" }, ACCOUNT)).toBeNull();
-  });
-
-  it("returns null when the livestream is explicitly not live", () => {
-    const stale = liveChannel({
-      livestream: { id: "9999", is_live: false },
+  it("returns null when the stream is offline", () => {
+    // The block still exists after a broadcast ends; is_live is the signal.
+    const offline = liveChannel({
+      stream_title: "",
+      category: { id: 0, name: "" },
+      stream: {
+        is_live: false,
+        start_time: "0001-01-01T00:00:00Z",
+        viewer_count: 0,
+        thumbnail: "",
+      },
     });
 
-    expect(normalizeLivestream(stale, ACCOUNT)).toBeNull();
+    expect(normalizeLivestream(offline, ACCOUNT)).toBeNull();
   });
 
-  it("returns null when there is no livestream id", () => {
-    const broken = liveChannel({ livestream: { is_live: true } });
+  it("returns null when the stream block is missing", () => {
+    expect(normalizeLivestream({ slug: "xqc" }, ACCOUNT)).toBeNull();
+  });
+
+  it("returns null when is_live is missing", () => {
+    const unknown = liveChannel({
+      stream: { start_time: "2026-10-25T22:46:20Z" },
+    });
+
+    expect(normalizeLivestream(unknown, ACCOUNT)).toBeNull();
+  });
+
+  it("returns null without a start time, because there is no session key", () => {
+    const broken = liveChannel({ stream: { is_live: true } });
+
+    expect(normalizeLivestream(broken, ACCOUNT)).toBeNull();
+  });
+
+  it("returns null for an unparseable start time", () => {
+    const broken = liveChannel({
+      stream: { is_live: true, start_time: "yesterday" },
+    });
+
     expect(normalizeLivestream(broken, ACCOUNT)).toBeNull();
   });
 
@@ -173,13 +175,17 @@ describe("normalizeLivestream", () => {
 
   it("uses the account's display name rather than re-reading the channel", () => {
     expect(normalizeLivestream(liveChannel(), ACCOUNT)?.creatorDisplayName).toBe(
-      "AuronPlay",
+      "xqc",
     );
   });
 
   it("handles a zero viewer count as zero, not unknown", () => {
     const nobody = liveChannel({
-      livestream: { id: "1", is_live: true, viewer_count: 0 },
+      stream: {
+        is_live: true,
+        start_time: "2026-10-25T22:46:20Z",
+        viewer_count: 0,
+      },
     });
 
     expect(normalizeLivestream(nobody, ACCOUNT)?.viewerCount).toBe(0);
@@ -187,9 +193,9 @@ describe("normalizeLivestream", () => {
 
   it("treats a non-numeric viewer count as unknown", () => {
     const odd = liveChannel({
-      livestream: {
-        id: "1",
+      stream: {
         is_live: true,
+        start_time: "2026-10-25T22:46:20Z",
         viewer_count: "loads" as unknown as number,
       },
     });
@@ -197,18 +203,34 @@ describe("normalizeLivestream", () => {
     expect(normalizeLivestream(odd, ACCOUNT)?.viewerCount).toBeNull();
   });
 
-  it("ignores an unparseable start time rather than storing Invalid Date", () => {
-    const broken = liveChannel({
-      livestream: { id: "1", is_live: true, start_time: "yesterday" },
+  it("treats missing optional fields as null", () => {
+    const sparse = liveChannel({
+      stream_title: undefined,
+      category: undefined,
+      stream: { is_live: true, start_time: "2026-10-25T22:46:20Z" },
     });
+    const result = normalizeLivestream(sparse, ACCOUNT);
 
-    expect(normalizeLivestream(broken, ACCOUNT)?.startedAt).toBeNull();
+    expect(result?.title).toBeNull();
+    expect(result?.game).toBeNull();
+    expect(result?.thumbnail).toBeNull();
+    expect(result?.viewerCount).toBeNull();
   });
 
-  it("accepts a stream with no start time", () => {
-    // A broadcast that has just started may not have one yet, and that is
-    // still a live session worth alerting on.
-    const fresh = liveChannel({ livestream: { id: "1", is_live: true } });
-    expect(normalizeLivestream(fresh, ACCOUNT)?.startedAt).toBeNull();
+  it("trims empty strings rather than showing blank fields", () => {
+    const blank = liveChannel({
+      stream_title: "   ",
+      category: { name: "  " },
+      stream: {
+        is_live: true,
+        start_time: "2026-10-25T22:46:20Z",
+        thumbnail: " ",
+      },
+    });
+    const result = normalizeLivestream(blank, ACCOUNT);
+
+    expect(result?.title).toBeNull();
+    expect(result?.game).toBeNull();
+    expect(result?.thumbnail).toBeNull();
   });
 });
