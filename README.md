@@ -167,19 +167,19 @@ connection, so detection works whether or not `npm run bot` is running.
 
 Pick one. Setting both means overlapping passes.
 
-**External cron** (recommended for hosted deployments):
-
-```bash
-curl -X POST -H "x-poll-secret: $STREAM_POLL_SECRET" \
-  https://your-app.example/api/internal/poll-streams
-```
-
-**In-process timers** (self-hosted). Set both to poll every provider
-automatically:
+**In-process timers** (CranL, self-hosted, or any always-on container). Set
+both to poll every provider automatically:
 
 ```bash
 STREAM_POLL_INTERVAL_SECS=1800      # YouTube (quota-safe)
 STREAM_POLL_FAST_INTERVAL_SECS=60   # Twitch and Kick
+```
+
+**External cron** (for hosts that pause idle instances):
+
+```bash
+curl -X POST -H "x-poll-secret: $STREAM_POLL_SECRET" \
+  https://your-app.example/api/internal/poll-streams
 ```
 
 The slow interval belongs to YouTube. The fast interval belongs to Twitch and
@@ -189,6 +189,12 @@ every provider, which is the original single-timer behaviour. If only the fast
 interval is set, YouTube is not polled. Restart after changing either value.
 Leave both empty otherwise, so the app never polls on its own.
 
+On CranL, set both values in the app's **Environment** settings and restart
+the app. CranL runs a persistent container, so the in-process timers are the
+normal setup. Do not add a one-minute CranL schedule: a cron call runs a full
+pass, which would check YouTube every minute and exhaust its quota. Use the
+split timers, or add provider filtering to the endpoint before scheduling it.
+
 The endpoint refuses to run when `STREAM_POLL_SECRET` is unset or shorter
 than 32 characters, compares the secret in constant time, and accepts it in
 the `x-poll-secret` header only. It is a POST because a pass posts real
@@ -196,6 +202,21 @@ messages: a GET that mutates can be triggered by any page that embeds the URL
 as an image, and may be cached by a proxy. A `?secret=` query parameter is
 rejected on purpose, since query strings are recorded in access logs and
 shell history. Repeated failures from one address are answered with 429.
+
+### Checking timer health
+
+The read-only status endpoint uses the same secret and reports the active
+timers, their intervals, and the last cycle's counts, timestamps, and error:
+
+```bash
+curl -H "x-poll-secret: $STREAM_POLL_SECRET" \
+  https://your-app.example/api/internal/stream-status
+```
+
+An empty `pollers` array means both interval variables were unset or the
+server has not been restarted since they were added. On CranL, this is the
+quickest way to confirm that `fast` and `youtube` actually started. The
+request never starts a cycle or polls a provider.
 
 A plain timer is not reliable on platforms that freeze idle instances. That
 is why the endpoint exists as an alternative, and why the interval is opt-in.

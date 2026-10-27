@@ -7,7 +7,11 @@ const { runStreamDetectionCycle } = vi.hoisted(() => ({
 
 vi.mock("./poller", () => ({ runStreamDetectionCycle }));
 
-import { startStreamPoller, stopStreamPoller } from "./poller-runtime";
+import {
+  getStreamPollerStatus,
+  startStreamPoller,
+  stopStreamPoller,
+} from "./poller-runtime";
 
 /**
  * The guard that stops poll cycles stacking.
@@ -145,5 +149,82 @@ describe("stream poller", () => {
     expect(runStreamDetectionCycle.mock.calls[0]?.[0]).toEqual([
       StreamingProvider.YOUTUBE,
     ]);
+  });
+
+  it("reports each poller's interval, providers and last result", async () => {
+    runStreamDetectionCycle.mockResolvedValue(QUIET_CYCLE);
+
+    startStreamPoller(1_000, {
+      key: "fast",
+      providers: [StreamingProvider.TWITCH, StreamingProvider.KICK],
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const [status] = getStreamPollerStatus();
+
+    expect(status).toMatchObject({
+      key: "fast",
+      intervalMs: 1_000,
+      providers: [StreamingProvider.TWITCH, StreamingProvider.KICK],
+      inFlight: false,
+      lastResult: QUIET_CYCLE,
+      lastError: null,
+    });
+    expect(status?.registeredAt).toEqual(expect.any(String));
+    expect(status?.lastStartedAt).toEqual(expect.any(String));
+    expect(status?.lastFinishedAt).toEqual(expect.any(String));
+  });
+
+  it("reports an in-flight cycle and its final state", async () => {
+    let finishCycle: (value: typeof QUIET_CYCLE) => void = () => {};
+
+    runStreamDetectionCycle.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCycle = resolve;
+        }),
+    );
+
+    startStreamPoller(1_000, { key: "fast" });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(getStreamPollerStatus()[0]).toMatchObject({
+      inFlight: true,
+      lastStartedAt: expect.any(String),
+      lastFinishedAt: null,
+    });
+
+    finishCycle(QUIET_CYCLE);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(getStreamPollerStatus()[0]).toMatchObject({
+      inFlight: false,
+      lastResult: QUIET_CYCLE,
+      lastFinishedAt: expect.any(String),
+    });
+  });
+
+  it("reports the last cycle error", async () => {
+    runStreamDetectionCycle.mockRejectedValue(new Error("provider exploded"));
+
+    startStreamPoller(1_000, { key: "fast" });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(getStreamPollerStatus()[0]).toMatchObject({
+      inFlight: false,
+      lastResult: null,
+      lastError: "provider exploded",
+      lastFinishedAt: expect.any(String),
+    });
+  });
+
+  it("reports no pollers after they are stopped", () => {
+    startStreamPoller(1_000, { key: "fast" });
+    stopStreamPoller();
+
+    expect(getStreamPollerStatus()).toEqual([]);
   });
 });
