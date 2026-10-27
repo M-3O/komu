@@ -952,8 +952,8 @@ the same repository:
 1. Create a second app named `komu-bot`, connected to the same `main` branch.
 2. Set the start command to `npm run bot`. The bot does not need the Next.js
    production build.
-3. Set the app port (for example `3001`) and point the health check at
-   `/health` if CranL asks for a path.
+3. Set the app port to `3001` and set `PORT=3001` in the bot app's
+   environment. Point the health check at `/health` if CranL asks for a path.
 4. Add `DATABASE_URL`, `DISCORD_BOT_TOKEN`, and `DISCORD_CLIENT_ID` to the
    bot app's environment. Do not prefix the token with `NEXT_PUBLIC_`.
 5. Deploy and run `/ping` in Discord.
