@@ -944,6 +944,33 @@ This is not a background worker in the sense the plan rules out. There is no
 queue and no job system; a gateway connection simply has to stay open for as
 long as the bot is online.
 
+### Hosting the bot on CranL
+
+The website's CranL app does **not** start the bot. Deploy a second app from
+the same repository:
+
+1. Create a second app named `komu-bot`, connected to the same `main` branch.
+2. Set the start command to `npm run bot`. The bot does not need the Next.js
+   production build.
+3. Set the app port (for example `3001`) and point the health check at
+   `/health` if CranL asks for a path.
+4. Add `DATABASE_URL`, `DISCORD_BOT_TOKEN`, and `DISCORD_CLIENT_ID` to the
+   bot app's environment. Do not prefix the token with `NEXT_PUBLIC_`.
+5. Deploy and run `/ping` in Discord.
+
+The bot exposes a small HTTP health endpoint on `$PORT` (falling back to
+`3001`) because CranL expects an application to listen on a port. It returns
+`503` while Discord is connecting and `200` once the gateway is ready. The
+endpoint reports only readiness and uptime; it exposes no configuration.
+
+Run only one bot process with a given token. Stop the local bot before
+starting the hosted app, or both will process the same Discord events. The
+website and bot share the same database, but they are independent processes:
+restarting the website does not disconnect the bot.
+
+`tsx` is a runtime dependency because the bot's start command uses it. The
+health server is in `src/bot/health-server.ts`.
+
 Register the slash commands once:
 
 ```bash

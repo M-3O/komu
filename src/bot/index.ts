@@ -14,7 +14,7 @@ import { config } from "dotenv";
  */
 config({ path: [".env.local", ".env"] });
 
-import { Client } from "discord.js";
+import { Client, Events } from "discord.js";
 
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
@@ -25,6 +25,7 @@ import { registerInteractionCreate } from "./events/interaction-create";
 import { registerMessageCreate } from "./events/message-create";
 import { registerMessageReactionAdd } from "./events/message-reaction-add";
 import { registerReady } from "./events/ready";
+import { readBotHealthPort, startBotHealthServer } from "./health-server";
 
 const log = createLogger("bot");
 
@@ -43,13 +44,49 @@ async function main() {
   registerGuildMemberAdd(client);
   registerMessageReactionAdd(client);
 
+  const startedAt = Date.now();
+  let ready = false;
+  const health = await startBotHealthServer({
+    port: readBotHealthPort(),
+    isReady: () => ready,
+    startedAt,
+  });
+
+  log.info("Bot health server listening", { port: health.port });
+
+  client.once(Events.ClientReady, () => {
+    ready = true;
+  });
+
+  client.on(Events.ShardDisconnect, () => {
+    ready = false;
+  });
+
+  client.on(Events.ShardResume, () => {
+    ready = true;
+  });
+
   // Command registration is handled by `npm run bot:register`, so a restart
   // never rewrites commands on Discord.
 
   // Close the gateway connection and the database on shutdown, so a restart
   // or deploy does not leave the bot appearing online briefly.
+  let shuttingDown = false;
+
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    ready = false;
+
     log.info(`Received ${signal}; shutting down`);
+
+    try {
+      await health.close();
+    } catch (error) {
+      log.error("Could not close the health server", {
+        reason: error instanceof Error ? error.message : "unknown",
+      });
+    }
 
     try {
       await client.destroy();
@@ -68,12 +105,16 @@ async function main() {
 
   try {
     await client.login(getBotToken());
+    ready = true;
   } catch (error) {
     log.error("Could not connect to Discord", {
       reason: error instanceof Error ? error.message : "unknown",
     });
-    process.exitCode = 1;
+
+    await health.close().catch(() => undefined);
+    await client.destroy().catch(() => undefined);
     await prisma.$disconnect();
+    process.exitCode = 1;
   }
 }
 

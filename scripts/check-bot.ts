@@ -19,6 +19,7 @@ import "../src/bot/events/level-up-message";
 import "../src/bot/events/message-create";
 import "../src/bot/events/message-reaction-add";
 import "../src/bot/events/ready";
+import "../src/bot/health-server";
 
 const commandNames = COMMANDS.map((command) => command.definition.name);
 
