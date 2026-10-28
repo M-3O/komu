@@ -35,7 +35,8 @@
     "zod": "^4.6.7"
   },
   "overrides": {
-    "undici": "^6.29.1"
+  "undici": "^6.29.1",
+  "deepmerge-ts": "^8.0.2"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
