@@ -167,15 +167,22 @@ connection, so detection works whether or not `npm run bot` is running.
 
 Pick one. Setting both means overlapping passes.
 
-**In-process timers** (CranL, self-hosted, or any always-on container). Set
-both to poll every provider automatically:
+**In-process timers** (CranL, self-hosted, or any always-on container). The
+repository supplies non-secret production defaults in `.env.production`:
 
 ```bash
 STREAM_POLL_INTERVAL_SECS=1800      # YouTube (quota-safe)
 STREAM_POLL_FAST_INTERVAL_SECS=60   # Twitch and Kick
 ```
 
-**External cron** (for hosts that pause idle instances):
+These are fallbacks, not overrides. Next.js checks the process environment
+first, so values set in CranL's **Environment** panel (or another host's
+runtime environment) take precedence. Locally, `.env.local` also takes
+precedence. Set both values to `0` in the runtime environment to disable the
+in-process timers; values below 15 are treated as off.
+
+**External cron** (for hosts that pause idle instances). Disable the timers
+first, otherwise both triggers will run:
 
 ```bash
 curl -X POST -H "x-poll-secret: $STREAM_POLL_SECRET" \
@@ -187,13 +194,12 @@ Kick, so those alerts can arrive within a minute without burning YouTube's
 quota. If the fast interval is unset, the slow interval falls back to checking
 every provider, which is the original single-timer behaviour. If only the fast
 interval is set, YouTube is not polled. Restart after changing either value.
-Leave both empty otherwise, so the app never polls on its own.
 
-On CranL, set both values in the app's **Environment** settings and restart
-the app. CranL runs a persistent container, so the in-process timers are the
-normal setup. Do not add a one-minute CranL schedule: a cron call runs a full
-pass, which would check YouTube every minute and exhaust its quota. Use the
-split timers, or add provider filtering to the endpoint before scheduling it.
+On CranL, the committed defaults are enough for the normal always-on
+container; override them in **Environment** only when you need different
+values. Do not add a one-minute CranL schedule: a cron call runs a full pass,
+which would check YouTube every minute and exhaust its quota. Use the split
+timers, or add provider filtering to the endpoint before scheduling it.
 
 The endpoint refuses to run when `STREAM_POLL_SECRET` is unset or shorter
 than 32 characters, compares the secret in constant time, and accepts it in
@@ -213,13 +219,17 @@ curl -H "x-poll-secret: $STREAM_POLL_SECRET" \
   https://your-app.example/api/internal/stream-status
 ```
 
-An empty `pollers` array means both interval variables were unset or the
-server has not been restarted since they were added. On CranL, this is the
-quickest way to confirm that `fast` and `youtube` actually started. The
-request never starts a cycle or polls a provider.
+An empty `pollers` array means polling is disabled because both interval
+values were set to `0` (or another value below 15), or the server has not
+been restarted since they changed. With the committed production defaults, a
+normal production restart should show `fast` and `youtube`. On CranL, this is
+the quickest way to confirm that both timers actually started. The request
+never starts a cycle or polls a provider.
 
 A plain timer is not reliable on platforms that freeze idle instances. That
-is why the endpoint exists as an alternative, and why the interval is opt-in.
+is why the endpoint exists as an alternative, and why polling remains opt-in
+outside production. The committed defaults keep the normal CranL deployment
+working without dashboard-only configuration.
 
 ### Behaviour worth knowing
 

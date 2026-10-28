@@ -4,9 +4,10 @@
  * Runs once when the Node server starts. Used to poll streaming providers on
  * a timer when the deployment has no external cron.
  *
- * Polling is off unless at least one interval is set, so a hosted deployment
- * that calls `/api/internal/poll-streams` from its own scheduler never double
- * polls.
+ * Polling is off unless at least one interval is set. Production has
+ * non-secret fallbacks in `.env.production`; a deployment that calls
+ * `/api/internal/poll-streams` from its own scheduler must set both interval
+ * variables to 0 to avoid double polling.
  *
  * Two intervals exist because the providers have different limits:
  *
@@ -18,7 +19,8 @@
  *
  * A plain `setInterval` is fine for a self-hosted or single long-lived
  * server. It is not reliable on platforms that freeze idle instances, which
- * is why it is opt-in and why the endpoint exists as an alternative.
+ * is why it remains configurable and why the endpoint exists as an
+ * alternative.
  */
 
 /** Parse an interval in seconds, rejecting missing and unsafe values. */
