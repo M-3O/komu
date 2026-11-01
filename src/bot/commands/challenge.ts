@@ -17,9 +17,9 @@ import { KOMU_COLOR } from "../constants";
 /**
  * `/challenge` — a member's progress on the current challenges.
  *
- * The member-facing view of challenge progress (PRD section 7.9). Challenges
- * have no announcement channel configured, so this is where a member finds
- * out how they are doing rather than waiting to be told.
+ * The member-facing view of challenge progress (PRD section 7.9). Completion
+ * announcements are posted by the bot when a challenge has a channel
+ * configured; this command remains the place to check partial progress.
  */
 
 export const challengeCommand = new SlashCommandBuilder()

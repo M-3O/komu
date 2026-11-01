@@ -1,5 +1,3 @@
-import { config } from "dotenv";
-
 /**
  * Register slash commands with Discord.
  *
@@ -13,8 +11,6 @@ import { config } from "dotenv";
  * immediately, so use `--guild` while developing. Command bodies cannot mix
  * global and guild commands; re-run without `--guild` before shipping.
  */
-config({ path: [".env.local", ".env"] });
-
 import { REST, Routes } from "discord.js";
 
 import { createLogger } from "@/lib/logger";

@@ -1,10 +1,13 @@
 import { config } from "dotenv";
 import { defineConfig } from "prisma/config";
 
+import { initializeDatabaseEnvironment } from "./src/lib/config/database-environment";
+
 // Load `.env.local` (Next.js convention) so `npm run db:migrate` works
 // without exporting DATABASE_URL first. `.env` is loaded as a fallback for
 // CI, where a single file is usually provided.
 config({ path: [".env.local", ".env"] });
+initializeDatabaseEnvironment();
 
 /**
  * Prisma CLI configuration.

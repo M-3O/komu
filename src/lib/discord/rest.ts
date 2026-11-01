@@ -19,6 +19,20 @@ import {
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 
+/**
+ * Discord channel types that can receive a normal text message.
+ *
+ * Text, announcement, public/private thread, and announcement thread. Voice
+ * and category channels are deliberately excluded: Discord accepts some
+ * messages there, but they are not a sensible announcement destination.
+ */
+const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
+
+/** Whether a Discord channel type is a text destination. */
+export function isTextChannelType(type: number): boolean {
+  return TEXT_CHANNEL_TYPES.has(type);
+}
+
 const log = createLogger("discord");
 
 /** Result of a Discord write. Never throws, for the same reason as the bot. */

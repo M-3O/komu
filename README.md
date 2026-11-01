@@ -460,7 +460,8 @@ with extra steps.
 ## Challenges
 
 A challenge is a structured, time-bounded goal with one or more
-requirements. All of them must be met.
+requirements. All of them must be met. A challenge can also publish a
+completion announcement to one Discord text channel.
 
 ```text
 Attend 3 streams
@@ -470,6 +471,8 @@ Attend 3 streams
 Challenge complete
         =
 250 XP and the @Challenge Winner role
+        +
+A completion announcement in #announcements
 ```
 
 ### Progress counts from the start of the challenge
@@ -525,15 +528,64 @@ A member who completes a challenge gets `xpReward` and, if configured, a
 Discord role. The payout bypasses the daily XP cap: finishing a challenge is a
 deliberate reward, not something earned by grinding messages.
 
-`rewardGivenAt` makes it exactly once. It is set even when the role could not
-be assigned, so a role above the bot's highest role does not retry — and
-inflate XP — on every subsequent message.
+`rewardGivenAt` stops a member collecting the same challenge reward again on
+subsequent progression checks. It is set even when the role could not be
+assigned, so a role above the bot's highest role does not retry — and inflate
+XP — on every subsequent message. Concurrent payout calls are a separate
+pre-existing race; the announcement claim does not change or fix that flow.
+
+### Completion announcements
+
+Each challenge can post one announcement to a Discord text channel when a
+member finishes it. Pick the channel when creating the challenge, or use the
+inline selector on an existing challenge. The options come from Discord, and
+the server action re-checks that the submitted id is a text channel in the
+connected server before saving it.
+
+The announcement names the member and challenge, shows a **Completed** status,
+and includes the XP and/or role reward when one is configured. It is posted by
+the bot process, so the bot must be online and have **Send Messages** and
+**Embed Links** permission in that channel. The website being online is not
+enough.
+
+Delivery is tracked on `ChallengeProgress`. A claim is written before the
+Discord call, and `announcementSentAt` is written only after Discord accepts the
+message. Each claim has an opaque token; release and delivery updates require
+that token, so a stale claimant cannot clear or overwrite a newer claimant's
+state after the five-minute lease expires. Claim timestamps are calculated per
+row rather than once for a whole announcement pass.
+
+A missing channel, permission error, deleted channel, or failed Discord send
+leaves the announcement unrecorded and retryable on a later qualifying
+activity. A successful send whose final database mark fails is retried a small,
+bounded number of times. If it still cannot be recorded, the claim is left in
+place for recovery after the lease.
+
+Delivery is event-driven, not guaranteed eventual delivery: retries happen when
+the member next triggers progression, and there is no worker, queue, scheduled
+job, or startup sweep. If the member never has another qualifying activity, a
+failed or unrecorded announcement is never retried.
+
+Repeated progress checks and concurrent events normally post at most one
+announcement per member per challenge. This is not true exactly-once delivery.
+Discord and the database cannot participate in one atomic transaction, so a
+crash, a database failure after Discord accepts a message, a timed-out send
+that Discord actually accepted, or a send still running when the lease expires
+can cause the completion to be announced twice. The claim token prevents a
+stale claimant from corrupting a newer claimant's state, but it cannot
+eliminate that residual duplicate-delivery window.
+
+Choosing **No channel** disables announcements for that challenge. It does not
+affect progress, XP, or the role payout. Configuring a channel on an existing
+challenge can also announce members who completed it before the channel was
+configured, the next time they trigger progression; this is useful for
+retroactive setup but should be expected.
 
 ### Member view
 
-`/challenge` in Discord shows the caller's progress on the current
-challenges. Challenges have no announcement channel configured, so this is
-where a member finds out how they are doing rather than waiting to be told.
+`/challenge` in Discord shows the caller's progress on the current challenges.
+Completion announcements are posted separately when a challenge has a channel
+configured; `/challenge` remains the place to check partial progress.
 
 ## Achievements
 
@@ -811,6 +863,13 @@ real database because the things they check are only answerable against one:
 a unique constraint either holds or it does not, two writes either race or they
 do not, a transaction either rolls back or it does not.
 
+Challenge announcement delivery is unit-tested with mocked Prisma and Discord
+boundaries: successful delivery, duplicate suppression, stale-claim ownership,
+missing channel configuration, channel removal, Discord send failure, failed
+announcement queries, and bounded final-mark retries. The outbound-request guard
+also has focused checks for bare, `globalThis`, `window`, and Discord.js method
+calls.
+
 **Integration tests write, so point them at a development database.** Each test
 builds its own rows from a unique seed and removes them afterwards, and the
 suite runs serially, but it is not safe against production.
@@ -944,6 +1003,10 @@ application never sees a provider-specific response shape.
 
 ## Running the bot
 
+For isolated development on the verified Neon test branch, follow
+[the PowerShell startup instructions](docs/local-neon-test.md). Set the same
+test selection in each service's shell, then restart both processes.
+
 The Discord bot runs as its own process, separate from the web app:
 
 ```bash
@@ -960,12 +1023,18 @@ The website's CranL app does **not** start the bot. Deploy a second app from
 the same repository:
 
 1. Create a second app named `komu-bot`, connected to the same `main` branch.
-2. Set the start command to `npm run bot`. The bot does not need the Next.js
-   production build.
+2. Install dependencies with development dependencies available during the build,
+   run `npm run build:bot` to generate Prisma Client, and set the start command to
+   `npm run bot`. Keep `tsx` and the bot source files in the runtime image. The bot
+   does not need the Next.js production build. The dashboard's `npm run build`
+   also generates Prisma Client before compiling Next.js.
 3. Set the app port to `3001` and set `PORT=3001` in the bot app's
    environment. Point the health check at `/health` if CranL asks for a path.
-4. Add `DATABASE_URL`, `DISCORD_BOT_TOKEN`, and `DISCORD_CLIENT_ID` to the
-   bot app's environment. Do not prefix the token with `NEXT_PUBLIC_`.
+4. Set `NODE_ENV=production` and add `DATABASE_URL`, `DISCORD_BOT_TOKEN`, and
+   `DISCORD_CLIENT_ID` to the bot app's environment. Leave
+   `KOMU_DATABASE_TARGET` and `KOMU_NEON_TEST_DATABASE_URL` unset in both production
+   apps, and exclude local environment files from deployment. Do not prefix the
+   token with `NEXT_PUBLIC_`.
 5. Deploy and run `/ping` in Discord.
 
 The bot exposes a small HTTP health endpoint on `$PORT` (falling back to
@@ -1098,9 +1167,6 @@ channel going live.
 - **Membership-age roles and rewards** are evaluated on join and on activity,
   not on a daily sweep. A silent member misses the threshold until they
   interact.
-- **Challenges have no announcement channel.** A completion is logged and
-  appears on the dashboard and in `/challenge`, but nothing is posted to
-  Discord automatically. `Challenge` has no channel column to post to.
 - **Rate and join-spike windows reset when the bot restarts.** They are counted
   in memory rather than written to the database. A brief lapse after a deploy,
   not a way past the filter.
@@ -1164,6 +1230,9 @@ See `PRD.md` and `IMPLEMENTATION_PLAN.md` for the full requirements.
 - The alert settings form verifies the chosen channel and role against the
   guild's real channel and role list before saving, so a tampered form
   cannot point alerts at another server's channel.
+- Challenge announcement channels are validated the same way. The selected id
+  must be a text channel in the connected guild, including when an existing
+  challenge's setting is changed.
 - Discord access tokens are encrypted with AES-256-GCM before they reach the
   database, using a key derived from `AUTH_SECRET` with a separate info string
   from the session signer. A token stored before this existed is read as

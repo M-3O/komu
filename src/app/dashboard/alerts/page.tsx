@@ -18,14 +18,15 @@ import {
 } from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
-import { listGuildChannels, listGuildRoles } from "@/lib/discord/rest";
+import {
+  isTextChannelType,
+  listGuildChannels,
+  listGuildRoles,
+} from "@/lib/discord/rest";
 import { AlertsWorkspace } from "./AlertsWorkspace";
 import type { AlertAccount } from "./types";
 
 export const metadata = { title: "Stream Alerts" };
-
-/** Discord channel types Komu can post an alert into. */
-const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 
 /**
  * Stream alert configuration.
@@ -118,7 +119,7 @@ async function AlertSettingsPanel() {
   ]);
 
   const channels = allChannels
-    .filter((channel) => TEXT_CHANNEL_TYPES.has(channel.type))
+    .filter((channel) => isTextChannelType(channel.type))
     .map((channel) => ({ id: channel.id, label: `#${channel.name}` }));
 
   const roles = allRoles

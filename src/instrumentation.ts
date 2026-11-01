@@ -18,8 +18,8 @@
  *   checked every 60 seconds without that quota cost.
  *
  * A plain `setInterval` is fine for a self-hosted or single long-lived
- * server. It is not reliable on platforms that freeze idle instances, which
- * is why it remains configurable and why the endpoint exists as an
+ * server. It is not reliable on platforms that freeze idle instances, which is
+ * why it remains configurable and why the endpoint exists as an
  * alternative.
  */
 
@@ -37,10 +37,18 @@ function readInterval(name: string, raw: string | undefined): number | null {
   return seconds * 1_000;
 }
 
+/** Whether local isolated testing has explicitly disabled stream polling. */
+export function isStreamPollingDisabled(
+  raw: string | undefined = process.env.KOMU_DISABLE_STREAM_POLLING,
+): boolean {
+  return ["1", "true", "yes", "on"].includes(raw?.trim().toLowerCase() ?? "");
+}
+
 export async function register() {
   // Only in the Node runtime, and never during a build.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
+  if (isStreamPollingDisabled()) return;
 
   const mainIntervalMs = readInterval(
     "STREAM_POLL_INTERVAL_SECS",

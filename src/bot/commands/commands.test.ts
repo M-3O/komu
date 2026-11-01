@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Registry shape tests do not need a runtime database configuration.
+vi.mock("@/lib/db", () => ({ prisma: {} }));
 
 import { isGuildAdmin } from "../permissions";
 import { COMMANDS, getAutocompleteHandler, getHandler } from "./index";

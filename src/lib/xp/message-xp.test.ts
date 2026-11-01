@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Pure eligibility rules must not initialize a real Prisma client.
+vi.mock("@/lib/db", () => ({ prisma: {} }));
 
 import {
   cooldownElapsed,

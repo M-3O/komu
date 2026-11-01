@@ -1,15 +1,21 @@
 import type { NextConfig } from "next";
 
+import { initializeDatabaseEnvironment } from "./src/lib/config/database-environment";
+
+// Next.js has loaded its env files before evaluating this config. Validate the
+// selected URL here so the dashboard fails before serving requests, while the
+// explicit neon-test target is applied before application modules initialize.
+initializeDatabaseEnvironment();
+
 /**
  * Security headers.
  *
  * Next.js needs inline scripts for hydration and the RSC payload, and inline
- * styles for its own injected CSS, so `'unsafe-inline'` is required without
+ * styles for its own injected CSS, so 'unsafe-inline' is required without
  * wiring a nonce through the proxy. The rest still buys real protection:
- * no framing, no plugins, a pinned base URI and form target, and images only
- * from this origin or HTTPS.
+ * no framing, no plugins, a pinned base URI and images only from this origin or HTTPS.
  *
- * `'unsafe-eval'` is a development-only concession to Turbopack's HMR.
+ * 'unsafe-eval' is a development-only concession to Turbopack's HMR.
  */
 const isDev = process.env.NODE_ENV === "development";
 

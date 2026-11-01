@@ -1,0 +1,63 @@
+name: Build verification
+
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Linux / Node 24
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Compilation placeholders only. No database service or GitHub secrets.
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:9/komu_ci?connect_timeout=1
+      AUTH_SECRET: ci-placeholder-not-a-real-secret-at-least-32-characters
+      DISCORD_CLIENT_ID: "000000000000000000"
+      DISCORD_CLIENT_SECRET: ci-placeholder-not-a-discord-secret
+      DISCORD_BOT_TOKEN: ci-placeholder-not-a-discord-token
+      NEXT_PUBLIC_APP_URL: https://komu-ci.invalid
+      KOMU_DISABLE_STREAM_POLLING: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Generate Prisma Client
+        run: npx --no-install prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (no PostgreSQL integration suites)
+        run: npm test -- --config vitest.config.ts --pool=threads --maxWorkers=1
+
+      - name: Build dashboard
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Build bot (generate only; does not start the bot)
+        run: npm run build:bot
+        env:
+          NODE_ENV: production

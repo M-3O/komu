@@ -1,4 +1,4 @@
-import { XPSource } from "@prisma/client";
+import { XPSource, type Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 
@@ -63,8 +63,15 @@ export interface AwardXpResult {
  * Returns a result rather than throwing for the ordinary "nothing to award"
  * cases, because callers (a bot reacting to a message, a reward evaluator)
  * need to continue, not crash.
+ *
+ * Pass an existing transaction when the award must commit atomically with
+ * another durable record. All reads, the row lock, ledger and cached totals
+ * then use that transaction; this function never starts a nested transaction.
  */
-export async function awardXp(input: AwardXpInput): Promise<AwardXpResult> {
+export async function awardXp(
+  input: AwardXpInput,
+  transaction?: Prisma.TransactionClient,
+): Promise<AwardXpResult> {
   // Prisma throws a validation error for an undefined `where`, which would
   // escape as an unhandled failure in a bot event handler. Treat it as a
   // missing member instead.
@@ -79,7 +86,7 @@ export async function awardXp(input: AwardXpInput): Promise<AwardXpResult> {
     };
   }
 
-  return prisma.$transaction(async (tx) => {
+  const apply = async (tx: Prisma.TransactionClient): Promise<AwardXpResult> => {
     // Serialise every award for this member.
     //
     // The body below is read-then-write: it reads `xp`, computes a new total,
@@ -230,7 +237,11 @@ export async function awardXp(input: AwardXpInput): Promise<AwardXpResult> {
           ? "Reduced to stay within the daily cap."
           : undefined,
     };
-  }, {
+  };
+
+  if (transaction) return apply(transaction);
+
+  return prisma.$transaction(apply, {
     // Awards for one member queue on the row lock above, which is the point.
     // Prisma's two-second default for *starting* a transaction is short
     // enough that a remote database rejects the third waiter instead of

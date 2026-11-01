@@ -2,6 +2,10 @@ import type { GuildMember } from "discord.js";
 
 import { unlockAchievementsForMember, type UnlockAchievementsResult } from "@/lib/achievements/unlock";
 import {
+  announceChallengeCompletions,
+  type ChallengeAnnouncementResult,
+} from "@/lib/challenges/announce-completion";
+import {
   grantChallengeCompletions,
   type GrantCompletionsResult,
 } from "@/lib/challenges/grant-completion";
@@ -34,7 +38,10 @@ const log = createLogger("bot");
 export interface ProgressionResult {
   roles: ApplyRolesResult;
   rewards: GrantRewardsResult;
-  challenges: UpdateChallengesResult & { payouts: GrantCompletionsResult };
+  challenges: UpdateChallengesResult & {
+    payouts: GrantCompletionsResult;
+    announcements: ChallengeAnnouncementResult;
+  };
   achievements: UnlockAchievementsResult;
 }
 
@@ -70,7 +77,16 @@ export async function applyProgressionForMember(
     return {
       roles: { assigned: [], failed: [], alreadyHeld: 0, unsatisfied: 0 },
       rewards: { granted: [], failed: [], skipped: 0 },
-      challenges: { ...empty, payouts: { granted: [], partial: [], alreadyGiven: 0 } },
+      challenges: {
+        ...empty,
+        payouts: { granted: [], partial: [], alreadyGiven: 0 },
+        announcements: {
+          announced: [],
+          failed: [],
+          skippedNoChannel: 0,
+          skippedDuplicate: 0,
+        },
+      },
       achievements: { unlocked: [], partial: [], skipped: 0 },
     };
   }
@@ -96,6 +112,32 @@ export async function applyProgressionForMember(
 
   const payouts = await grantChallengeCompletions({ member, guildId: guildDbId });
 
+  // Announcements are a side effect of progression, not part of it. Keep any
+  // unexpected failure here from skipping achievements or disturbing the
+  // already-committed reward payout flow above.
+  let announcements: ChallengeAnnouncementResult;
+
+  try {
+    announcements = await announceChallengeCompletions({
+      member,
+      guildId: guildDbId,
+    });
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "Unknown announcement error";
+    announcements = {
+      announced: [],
+      failed: [{ challenge: "announcement check", reason }],
+      skippedNoChannel: 0,
+      skippedDuplicate: 0,
+    };
+    log.error("Challenge announcement check failed", {
+      guildId: guildDbId,
+      memberId: member.id,
+      reason,
+    });
+  }
+
   // Achievements run last: they read lifetime totals, so they should see
   // anything the rewards and challenges just added rather than the values
   // from before.
@@ -104,7 +146,7 @@ export async function applyProgressionForMember(
   return {
     roles,
     rewards,
-    challenges: { ...challengeProgress, payouts },
+    challenges: { ...challengeProgress, payouts, announcements },
     achievements,
   };
 }

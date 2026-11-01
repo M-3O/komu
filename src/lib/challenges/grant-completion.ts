@@ -1,4 +1,4 @@
-import { XPSource } from "@prisma/client";
+import { Prisma, XPSource } from "@prisma/client";
 import type { GuildMember } from "discord.js";
 
 import { addRoleToMember } from "@/bot/services/moderation";
@@ -22,7 +22,7 @@ const log = createLogger("xp");
 export interface GrantCompletionsResult {
   /** Challenges whose payout fully succeeded. */
   granted: string[];
-  /** Challenges partly paid out, with the reason. */
+  /** Challenges whose database payout or external role attempt failed. */
   partial: Array<{ challenge: string; reason: string }>;
   /** Challenges skipped because they were already paid. */
   alreadyGiven: number;
@@ -31,8 +31,11 @@ export interface GrantCompletionsResult {
 /**
  * Pay out every challenge the member has completed but not yet been paid for.
  *
- * Safe to call repeatedly. The `rewardGivenAt` check is what stops a member
- * collecting the same challenge reward on every message afterwards.
+ * The completion row is locked until XP and `rewardGivenAt` commit together.
+ * A concurrent reader must recheck the unpaid predicate after waiting for the
+ * lock, and a rollback leaves the completion unpaid and eligible for retry.
+ * Discord role calls happen only after commit, never while holding DB locks.
+ * As before, a failed role attempt is reported rather than replaying rewards.
  */
 export async function grantChallengeCompletions(input: {
   member: GuildMember;
@@ -79,31 +82,93 @@ export async function grantChallengeCompletions(input: {
   for (const row of progressRows) {
     const { challenge } = row;
     const problems: string[] = [];
+    let paid: boolean;
 
-    if (challenge.xpReward > 0) {
-      // Bypasses the daily cap: a challenge the member finished is a
-      // deliberate payout, not something earned by grinding messages.
-      const outcome = await awardXp({
+    try {
+      paid = await prisma.$transaction(async (tx) => {
+        // The initial findMany is only a candidate list. PostgreSQL locks the
+        // row and re-evaluates this predicate after a concurrent owner commits.
+        const unpaid = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM challenge_progress
+          WHERE id = ${row.id}
+            AND "guildId" = ${input.guildId}
+            AND "memberId" = ${memberRow.id}
+            AND "completedAt" IS NOT NULL
+            AND "rewardGivenAt" IS NULL
+          FOR UPDATE
+        `;
+
+        if (unpaid.length === 0) return false;
+
+        if (challenge.xpReward > 0) {
+          // Reuse the XP service on this transaction: the ledger, both cached
+          // totals and payout marker must all commit or all roll back.
+          const outcome = await awardXp({
+            guildId: input.guildId,
+            memberId: memberRow.id,
+            amount: challenge.xpReward,
+            source: XPSource.CHALLENGE,
+            reason: `Challenge complete: ${challenge.name}`,
+            ignoreDailyCap: true,
+          }, tx);
+
+          if (outcome.awarded !== challenge.xpReward) {
+            throw new Error("Challenge XP was not awarded in full.");
+          }
+        }
+
+        const marked = await tx.challengeProgress.updateMany({
+          where: {
+            id: row.id,
+            guildId: input.guildId,
+            memberId: memberRow.id,
+            completedAt: { not: null },
+            rewardGivenAt: null,
+          },
+          data: { rewardGivenAt: new Date() },
+        });
+
+        if (marked.count !== 1) {
+          throw new Error("Challenge payout could not be recorded.");
+        }
+
+        return true;
+      }, {
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        maxWait: 10_000,
+        timeout: 15_000,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown payout error";
+      result.partial.push({ challenge: challenge.name, reason });
+      log.warn("Challenge payout transaction failed; safe to retry", {
         guildId: input.guildId,
         memberId: memberRow.id,
-        amount: challenge.xpReward,
-        source: XPSource.CHALLENGE,
-        reason: `Challenge complete: ${challenge.name}`,
-        ignoreDailyCap: true,
+        challenge: challenge.name,
+        reason,
       });
-
-      if (outcome.awarded <= 0) {
-        problems.push("XP was not awarded.");
-      }
+      continue;
     }
 
-    if (challenge.rewardRoleId) {
-      const outcome = await addRoleToMember(input.member, challenge.rewardRoleId);
+    if (!paid) {
+      result.alreadyGiven += 1;
+      continue;
+    }
 
-      if (!outcome.ok) {
-        problems.push(
-          `Could not add @${challenge.rewardRoleName ?? "role"}: ${outcome.error ?? "unknown"}`,
-        );
+    // The DB commit is already durable. External role assignment is best
+    // effort, as before; a crash here requires role reconciliation, not an XP
+    // replay. Do not move Discord work inside the transaction above.
+    if (challenge.rewardRoleId) {
+      try {
+        const outcome = await addRoleToMember(input.member, challenge.rewardRoleId);
+
+        if (!outcome.ok) {
+          problems.push(
+            `Could not add @${challenge.rewardRoleName ?? "role"}: ${outcome.error ?? "unknown"}`,
+          );
+        }
+      } catch {
+        problems.push(`Could not add @${challenge.rewardRoleName ?? "role"}.`);
       }
     }
 
@@ -124,14 +189,6 @@ export async function grantChallengeCompletions(input: {
         reason: problems.join("; "),
       });
     }
-
-    // Marked as paid even on a partial failure, so a role that cannot be
-    // assigned does not retry on every message. The XP did land, and
-    // repeatedly retrying would inflate totals.
-    await prisma.challengeProgress.updateMany({
-      where: { id: row.id, rewardGivenAt: null },
-      data: { rewardGivenAt: new Date() },
-    });
   }
 
   return result;
