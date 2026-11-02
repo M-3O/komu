@@ -21,8 +21,11 @@ const LIB = join(process.cwd(), "src", "lib");
 /** The one file that is supposed to call `fetch`. */
 const HELPER = join(LIB, "http", "fetch-with-timeout.ts");
 
-/** Matches `fetch(` but not `fetchWithTimeout(`. */
-const RAW_FETCH = /\bfetch\(/;
+/**
+ * Matches a bare `fetch(` or an explicit global `fetch` call, but not
+ * `fetchWithTimeout(` or a method call such as Discord.js's `channels.fetch(`.
+ */
+const RAW_FETCH = /(?<![.\w])fetch\(|\b(?:globalThis|window)\.fetch\(/;
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -51,5 +54,20 @@ describe("outbound requests", () => {
       .map((path) => path.slice(LIB.length + 1));
 
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("raw fetch detection", () => {
+  it.each([
+    ["fetch(url)", true],
+    ["await fetch(url)", true],
+    ["globalThis.fetch(url)", true],
+    ["window.fetch(url)", true],
+    ["channels.fetch(channelId)", false],
+    ["guild.channels.fetch(channelId)", false],
+    ["fetchWithTimeout(url)", false],
+    ["myfetch(url)", false],
+  ])("matches %s as %s", (source, expected) => {
+    expect(RAW_FETCH.test(source)).toBe(expected);
   });
 });

@@ -28,7 +28,11 @@ import {
   UNAVAILABLE_REQUIREMENT_TYPES,
 } from "@/lib/challenges/progress";
 import { prisma } from "@/lib/db";
-import { listGuildRoles } from "@/lib/discord/rest";
+import {
+  isTextChannelType,
+  listGuildChannels,
+  listGuildRoles,
+} from "@/lib/discord/rest";
 import { ChallengeManager } from "./ChallengeManager";
 
 export const metadata = { title: "Challenges" };
@@ -55,7 +59,7 @@ export default function ChallengesPage() {
       <PageHeader
         eyebrow="Gamification / quests"
         title="Challenges & community quests"
-        description="Give the community a shared goal. Everyone who finishes gets the XP and role you set."
+        description="Give the community a shared goal. Everyone who finishes gets the XP and role you set, and Komu can announce the completion in Discord."
         actions={
           <>
             <Link href="/dashboard/rewards" className="komu-btn komu-btn-secondary">
@@ -110,6 +114,7 @@ async function ChallengesPanel() {
       endsAt: true,
       xpReward: true,
       rewardRoleName: true,
+      announcementChannelId: true,
       requirements: { select: { id: true, type: true, threshold: true, label: true } },
       progress: {
         select: {
@@ -141,6 +146,13 @@ async function ChallengesPanel() {
   );
 
   const roles = await listGuildRoles(guild.discordId);
+  const allChannels = await listGuildChannels(guild.discordId);
+  const channels = allChannels
+    .filter((channel) => isTextChannelType(channel.type))
+    .map((channel) => ({ id: channel.id, label: `#${channel.name}` }));
+  const channelNames = new Map(
+    allChannels.map((channel) => [channel.id, channel.name]),
+  );
 
   const unavailable = Object.entries(UNAVAILABLE_REQUIREMENT_TYPES);
   const active = challenges.filter((challenge) => challenge.enabled).length;
@@ -195,6 +207,10 @@ async function ChallengesPanel() {
           endsAt: challenge.endsAt ? challenge.endsAt.toISOString() : null,
           xpReward: challenge.xpReward,
           rewardRoleName: challenge.rewardRoleName,
+          announcementChannelId: challenge.announcementChannelId,
+          announcementChannelName: challenge.announcementChannelId
+            ? (channelNames.get(challenge.announcementChannelId) ?? null)
+            : null,
           requirements: challenge.requirements.map((requirement) => ({
             label: requirementLabel(requirement),
           })),
@@ -204,6 +220,7 @@ async function ChallengesPanel() {
         roles={roles
           .filter((role) => role.id !== guild.discordId)
           .map((role) => ({ id: role.id, label: `@${role.name}` }))}
+        channels={channels}
         requirementTypes={Object.entries(REQUIREMENT_OPTIONS).map(([value, label]) => ({
           value,
           label,
@@ -236,7 +253,7 @@ async function ChallengesPanel() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel
           title="How progress begins"
-          description="No retroactive credit."
+          description="No retroactive credit. Normally one announcement per finish."
           icon={Info}
         >
           <p className="text-xs leading-5 text-[color:var(--color-komu-muted)]">
@@ -247,6 +264,12 @@ async function ChallengesPanel() {
               /challenge
             </code>
             .
+          </p>
+          <p className="mt-3 text-xs leading-5 text-[color:var(--color-komu-muted)]">
+            When someone completes every requirement, Komu normally posts one
+            announcement to that challenge&apos;s channel. A failed Discord send
+            is never marked as delivered and can be retried on a later
+            qualifying activity.
           </p>
         </Panel>
 

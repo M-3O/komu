@@ -9,7 +9,11 @@ import {
   UNAVAILABLE_REQUIREMENT_TYPES,
 } from "@/lib/challenges/progress";
 import { prisma } from "@/lib/db";
-import { listGuildRoles } from "@/lib/discord/rest";
+import {
+  isTextChannelType,
+  listGuildChannels,
+  listGuildRoles,
+} from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
 import { INPUT_LIMITS } from "@/lib/validation/limits";
 
@@ -37,6 +41,54 @@ function isAvailableType(value: string): value is ChallengeRequirementType {
   return (AVAILABLE_REQUIREMENT_TYPES as string[]).includes(value);
 }
 
+type AnnouncementChannelResolution =
+  | { ok: true; channelId: string | null }
+  | { ok: false; error: string };
+
+/**
+ * Verify the browser-supplied channel against Discord before storing it.
+ *
+ * Empty means "no announcements" and is valid. A non-empty id must resolve to
+ * a channel in this guild that can actually receive a text message.
+ */
+async function resolveAnnouncementChannel(
+  guildDiscordId: string,
+  rawChannelId: string,
+): Promise<AnnouncementChannelResolution> {
+  const channelId = rawChannelId.trim();
+
+  if (!channelId) return { ok: true, channelId: null };
+
+  const channels = await listGuildChannels(guildDiscordId);
+
+  if (channels.length === 0) {
+    return {
+      ok: false,
+      error:
+        "Discord text channels could not be loaded. Check the bot's permissions and try again.",
+    };
+  }
+
+  const channel = channels.find((candidate) => candidate.id === channelId);
+
+  if (!channel) {
+    return {
+      ok: false,
+      error:
+        "That announcement channel is unavailable in this server. Refresh the page and choose another channel.",
+    };
+  }
+
+  if (!isTextChannelType(channel.type)) {
+    return {
+      ok: false,
+      error: "Choose a text channel for challenge announcements.",
+    };
+  }
+
+  return { ok: true, channelId: channel.id };
+}
+
 /**
  * Create a challenge from the submitted requirement rows.
  *
@@ -55,6 +107,9 @@ export async function createChallengeAction(
   const endsAtRaw = String(formData.get("endsAt") ?? "").trim();
   const xpRewardRaw = String(formData.get("xpReward") ?? "").trim();
   const roleId = String(formData.get("roleId") ?? "");
+  const announcementChannelRaw = String(
+    formData.get("announcementChannelId") ?? "",
+  );
 
   if (!name) return { ok: false, error: "Give the challenge a name." };
   if (name.length > INPUT_LIMITS.name) {
@@ -185,6 +240,15 @@ export async function createChallengeAction(
     rewardRole = { id: role.id, name: role.name };
   }
 
+  const announcementChannel = await resolveAnnouncementChannel(
+    guild.discordId,
+    announcementChannelRaw,
+  );
+
+  if (!announcementChannel.ok) {
+    return { ok: false, error: announcementChannel.error };
+  }
+
   await prisma.challenge.create({
     data: {
       guildId: guild.id,
@@ -194,6 +258,7 @@ export async function createChallengeAction(
       xpReward,
       rewardRoleId: rewardRole?.id ?? null,
       rewardRoleName: rewardRole?.name ?? null,
+      announcementChannelId: announcementChannel.channelId,
       requirements: { create: requirements },
     },
   });
@@ -202,6 +267,7 @@ export async function createChallengeAction(
     guildId: guild.id,
     name,
     requirements: requirements.length,
+    hasAnnouncementChannel: Boolean(announcementChannel.channelId),
   });
 
   refresh();
@@ -240,4 +306,51 @@ export async function deleteChallengeAction(challengeId: string): Promise<void> 
     log.info("Deleted challenge", { guildId: guild.id, challengeId });
     refresh();
   }
+}
+
+/**
+ * Change where an existing challenge announces completions.
+ *
+ * This is separate from creation so a challenge made before announcements
+ * existed can be pointed at a channel without deleting its progress.
+ */
+export async function updateChallengeAnnouncementAction(
+  challengeId: string,
+  _previous: ChallengeFormState,
+  formData: FormData,
+): Promise<ChallengeFormState> {
+  const guild = await requireGuild("/dashboard/challenges");
+
+  const challenge = await prisma.challenge.findFirst({
+    where: { id: challengeId, guildId: guild.id },
+    select: { id: true },
+  });
+
+  if (!challenge) {
+    return { ok: false, error: "That challenge was not found in your server." };
+  }
+
+  const announcementChannel = await resolveAnnouncementChannel(
+    guild.discordId,
+    String(formData.get("announcementChannelId") ?? ""),
+  );
+
+  if (!announcementChannel.ok) {
+    return { ok: false, error: announcementChannel.error };
+  }
+
+  await prisma.challenge.update({
+    where: { id: challenge.id },
+    data: { announcementChannelId: announcementChannel.channelId },
+  });
+
+  log.info("Updated challenge announcement channel", {
+    guildId: guild.id,
+    challengeId: challenge.id,
+    hasAnnouncementChannel: Boolean(announcementChannel.channelId),
+  });
+
+  refresh();
+
+  return { ok: true };
 }

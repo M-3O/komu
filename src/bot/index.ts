@@ -1,5 +1,3 @@
-import { config } from "dotenv";
-
 /**
  * Bot entry point.
  *
@@ -12,8 +10,6 @@ import { config } from "dotenv";
  * open for as long as the bot is online, which is why it lives in its own
  * process instead of inside a request handler.
  */
-config({ path: [".env.local", ".env"] });
-
 import { Client, Events } from "discord.js";
 
 import { prisma } from "@/lib/db";

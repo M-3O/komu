@@ -3,6 +3,7 @@
 import {
   CalendarClock,
   CheckCircle2,
+  Megaphone,
   Plus,
   Swords,
   Target,
@@ -29,6 +30,7 @@ import {
   createChallengeAction,
   deleteChallengeAction,
   toggleChallengeAction,
+  updateChallengeAnnouncementAction,
   type ChallengeFormState,
 } from "./actions";
 
@@ -40,6 +42,11 @@ import {
 const INITIAL_CHALLENGE_STATE: ChallengeFormState = {};
 
 interface RoleOption {
+  id: string;
+  label: string;
+}
+
+interface ChannelOption {
   id: string;
   label: string;
 }
@@ -61,6 +68,8 @@ interface ChallengeRow {
   endsAt: string | null;
   xpReward: number;
   rewardRoleName: string | null;
+  announcementChannelId: string | null;
+  announcementChannelName: string | null;
   requirements: RequirementRow[];
   enrolled: number;
   completed: number;
@@ -88,11 +97,13 @@ interface ProgressRow {
 export function ChallengeManager({
   challenges,
   roles,
+  channels,
   requirementTypes,
   progress,
 }: {
   challenges: ChallengeRow[];
   roles: RoleOption[];
+  channels: ChannelOption[];
   requirementTypes: RequirementOption[];
   progress: ProgressRow[];
 }) {
@@ -110,7 +121,7 @@ export function ChallengeManager({
           icon={Swords}
           action={<Badge tone="accent">{challenges.length} total</Badge>}
         >
-          <ChallengeList challenges={challenges} />
+          <ChallengeList challenges={challenges} channels={channels} />
         </Panel>
 
         <div className="xl:sticky xl:top-24">
@@ -168,6 +179,35 @@ export function ChallengeManager({
                 </select>
               </FormField>
 
+              <FormField
+                label="Announcement Channel"
+                hint="Optional. Komu posts one message here when a member finishes."
+              >
+                <select
+                  name="announcementChannelId"
+                  defaultValue=""
+                  className="komu-input"
+                >
+                  <option value="">No announcement</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.label}
+                    </option>
+                  ))}
+                </select>
+                {channels.length === 0 ? (
+                  <span
+                    role="alert"
+                    className="rounded-lg border border-red-400/25 bg-red-500/[0.07] px-3 py-2.5 text-xs leading-5 text-red-200"
+                  >
+                    No Discord text channels are available. Check that Komu&apos;s
+                    bot can view channels in this server, then refresh. You can
+                    leave <strong>No announcement</strong> selected and create
+                    the challenge without a destination.
+                  </span>
+                ) : null}
+              </FormField>
+
               <div className="rounded-xl border border-[color:var(--color-komu-border)] bg-white/[0.015] p-3">
                 <RequirementBuilder requirementTypes={requirementTypes} />
               </div>
@@ -187,7 +227,8 @@ export function ChallengeManager({
               {state?.ok ? (
                 <StatusMessage tone="success">
                   Challenge added. Progress starts from the next qualifying
-                  message, stream attendance or level change.
+                  message, stream attendance or level change. If you chose an
+                  announcement channel, Komu will use it when a member finishes.
                 </StatusMessage>
               ) : null}
             </form>
@@ -208,7 +249,13 @@ export function ChallengeManager({
   );
 }
 
-function ChallengeList({ challenges }: { challenges: ChallengeRow[] }) {
+function ChallengeList({
+  challenges,
+  channels,
+}: {
+  challenges: ChallengeRow[];
+  channels: ChannelOption[];
+}) {
   if (challenges.length === 0) {
     return (
       <EmptyState
@@ -265,6 +312,14 @@ function ChallengeList({ challenges }: { challenges: ChallengeRow[] }) {
                   ) : (
                     <Badge tone="neutral">No deadline</Badge>
                   )}
+                  {challenge.announcementChannelId ? (
+                    <Badge tone="accent">
+                      <Megaphone className="h-3 w-3" />
+                      {challenge.announcementChannelName
+                        ? `#${challenge.announcementChannelName}`
+                        : "Channel unavailable"}
+                    </Badge>
+                  ) : null}
                 </div>
 
                 {challenge.description ? (
@@ -312,6 +367,12 @@ function ChallengeList({ challenges }: { challenges: ChallengeRow[] }) {
                     {challenge.enrolled.toLocaleString()} enrolled
                   </span>
                 </div>
+
+                <AnnouncementChannelForm
+                  challengeId={challenge.id}
+                  currentChannelId={challenge.announcementChannelId ?? ""}
+                  channels={channels}
+                />
               </div>
 
               <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
@@ -330,6 +391,88 @@ function ChallengeList({ challenges }: { challenges: ChallengeRow[] }) {
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * Point an existing challenge at a completion channel without deleting it.
+ *
+ * Kept beside the challenge rather than in the create form because an existing
+ * challenge's progress must survive changing where its announcements go.
+ */
+function AnnouncementChannelForm({
+  challengeId,
+  currentChannelId,
+  channels,
+}: {
+  challengeId: string;
+  currentChannelId: string;
+  channels: ChannelOption[];
+}) {
+  const [state, formAction, pending] = useActionState<
+    ChallengeFormState,
+    FormData
+  >(
+    updateChallengeAnnouncementAction.bind(null, challengeId),
+    INITIAL_CHALLENGE_STATE,
+  );
+
+  return (
+    <form
+      action={formAction}
+      className="mt-3 flex flex-wrap items-center gap-2 border-t border-[color:var(--color-komu-border-muted)] pt-2.5"
+    >
+      <label
+        htmlFor={`announcement-channel-${challengeId}`}
+        className="inline-flex items-center gap-1 text-[10px] font-medium text-[color:var(--color-komu-muted)]"
+      >
+        <Megaphone className="h-3 w-3 text-indigo-300" />
+        Completion announcement
+      </label>
+      <select
+        id={`announcement-channel-${challengeId}`}
+        name="announcementChannelId"
+        defaultValue={currentChannelId}
+        className="komu-input min-h-8 w-auto max-w-full px-2 py-1 text-[11px]"
+      >
+        <option value="">No announcement</option>
+        {currentChannelId &&
+        !channels.some((channel) => channel.id === currentChannelId) ? (
+          <option value={currentChannelId}>
+            Current channel (unavailable)
+          </option>
+        ) : null}
+        {channels.map((channel) => (
+          <option key={channel.id} value={channel.id}>
+            {channel.label}
+          </option>
+        ))}
+      </select>
+      {currentChannelId &&
+      !channels.some((channel) => channel.id === currentChannelId) ? (
+        <span className="text-[10px] text-amber-200" role="status">
+          The saved channel is unavailable. Choose No announcement or refresh
+          after restoring the bot&apos;s access.
+        </span>
+      ) : null}
+      <button
+        type="submit"
+        disabled={pending}
+        className="komu-btn komu-btn-secondary min-h-8 px-2.5 py-1 text-[11px]"
+      >
+        {pending ? "Saving…" : "Save"}
+      </button>
+      {state?.error ? (
+        <span role="alert" className="text-[10px] text-red-300">
+          {state.error}
+        </span>
+      ) : null}
+      {state?.ok ? (
+        <span className="text-[10px] text-emerald-300">
+          Announcement setting saved.
+        </span>
+      ) : null}
+    </form>
   );
 }
 

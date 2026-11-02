@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "build:bot": "prisma generate",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
@@ -16,9 +17,11 @@
     "db:reset": "prisma migrate reset",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:payout:postgres": "vitest run --config vitest.payout.config.ts",
+    "diagnose:neon": "tsx scripts/diagnose-neon.ts",
     "test:watch": "vitest",
-    "bot": "tsx src/bot/index.ts",
-    "bot:register": "tsx src/bot/register-commands.ts",
+    "bot": "tsx src/bot/bootstrap.ts",
+    "bot:register": "tsx src/bot/register-bootstrap.ts",
     "check:bot": "tsx scripts/check-bot.ts",
     "verify": "npm run check:bot && npm run typecheck && npm run lint && npm test && npm run build"
   },

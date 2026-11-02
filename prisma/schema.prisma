@@ -643,6 +643,9 @@ model Challenge {
   rewardRoleId   String?
   rewardRoleName String?
 
+  /// Optional Discord text channel for completion announcements.
+  announcementChannelId String?
+
   requirements ChallengeRequirement[]
   progress     ChallengeProgress[]
 
@@ -689,8 +692,22 @@ model ChallengeProgress {
   completedAt  DateTime?
   rewardGivenAt DateTime?
 
+  /// Set while one check owns announcement delivery. Cleared when the owner
+  /// releases the claim, or set alongside `announcementSentAt` on success. A
+  /// final-mark database failure leaves the claim in place for lease recovery;
+  /// this remains separate from delivery so a failed Discord call is never
+  /// recorded as announced.
+  announcementClaimedAt DateTime?
+  /// Opaque token identifying the owner of the active claim. Release and
+  /// delivery writes must match this token so a stale claimant cannot alter a
+  /// newer claimant's state after the lease expires.
+  announcementClaimToken String?
+  /// Set only after Discord accepts the completion announcement.
+  announcementSentAt DateTime?
+
   @@unique([challengeId, memberId])
   @@index([guildId, completedAt])
+  @@index([guildId, memberId, announcementSentAt])
   @@map("challenge_progress")
 }
 
