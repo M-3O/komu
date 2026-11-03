@@ -8,8 +8,9 @@ vi.mock("node:net", () => ({ createConnection: network.tcp }));
 vi.mock("node:tls", () => ({ connect: network.tls }));
 vi.mock("node:dns/promises", () => ({ lookup: network.dns }));
 
-import { diagnoseNeonConnectivity, probePostgresTls, type DiagnosticDependencies } from "./neon-connectivity-diagnostic";
+import { diagnoseNeonConnectivity, diagnoseProductionNeonConnectivity, probePostgresTls, type DiagnosticDependencies } from "./neon-connectivity-diagnostic";
 import { PAYOUT_TEST_HOST, PayoutPreflightError } from "./payout-postgres-preflight";
+import { PRODUCTION_NEON_HOST, productionDiagnosticUrl } from "./production-neon-target";
 
 const url = `postgresql://fixture:private-password@${PAYOUT_TEST_HOST}/neondb?sslmode=require`;
 const env = () => ({ KOMU_DATABASE_TARGET: "neon-test", KOMU_NEON_TEST_DATABASE_URL: url, NODE_ENV: "test" });
@@ -181,7 +182,83 @@ function socketMock() {
   return Object.assign(new EventEmitter(), { write: vi.fn(), destroy: vi.fn(), authorized: true });
 }
 
+const productionUrl = `postgresql://fixture:p%40ss%25word@${PRODUCTION_NEON_HOST}/neondb?sslmode=require&connect_timeout=20&pool_timeout=20`;
+const productionEnv = () => ({
+  NODE_ENV: "production",
+  KOMU_EXPECTED_PRODUCTION_HOST: PRODUCTION_NEON_HOST,
+  KOMU_PRODUCTION_DIAGNOSTIC_DATABASE_URL: productionUrl,
+});
+
+describe("explicit production connectivity (no migration approval)", () => {
+  it("pins DNS, TLS and the client to production while leaving pending-schema checks separate", async () => {
+    const db = dependencies();
+    const input = productionEnv();
+    const report = await diagnoseProductionNeonConnectivity(input, db.deps);
+    expect(report).toMatchObject({
+      ok: true, target: "production", hostname: PRODUCTION_NEON_HOST,
+      connectTimeoutSeconds: 20, poolTimeoutSeconds: 20, identity: true,
+      payoutPreflightApplicable: false, preflight: null, migrationApproved: false,
+      strictTlsOptionAppended: true,
+    });
+    expect(db.deps.lookup).toHaveBeenCalledExactlyOnceWith(PRODUCTION_NEON_HOST);
+    expect(db.deps.probe).toHaveBeenCalledWith(expect.any(Object), PRODUCTION_NEON_HOST);
+    expect(db.deps.client).toHaveBeenCalledExactlyOnceWith(productionUrl + "&sslaccept=strict");
+    expect(db.deps.preflight).not.toHaveBeenCalled();
+    expect(db.client.$transaction).toHaveBeenCalledTimes(1);
+    expect(input).toEqual(productionEnv());
+    expect(JSON.stringify(report)).not.toMatch(/p%40ss|fixture:|postgresql:/);
+  });
+  it.each([
+    {}, { DATABASE_URL: productionUrl },
+    { ...productionEnv(), NODE_ENV: "test" },
+    { ...productionEnv(), KOMU_EXPECTED_PRODUCTION_HOST: PAYOUT_TEST_HOST },
+    { ...productionEnv(), KOMU_DATABASE_TARGET: "neon-test" },
+    { ...productionEnv(), KOMU_NEON_TEST_DATABASE_URL: productionUrl },
+    ...[
+      productionUrl.replace(PRODUCTION_NEON_HOST, PAYOUT_TEST_HOST),
+      productionUrl.replace("/neondb", "/other"),
+      productionUrl + "&schema=private",
+      productionUrl + "&host=other.neon.tech",
+      productionUrl + "&schema=public&schema=public",
+      productionUrl.replace("sslmode=require", "sslmode=verify-full"),
+      productionUrl.replace("sslmode=require", "sslmode%3Drequire%26schema%3Dpublic"),
+      productionUrl + "&sslaccept=accept_invalid_certs",
+      productionUrl + "&connect_timeout=0",
+    ].map((value) => ({ ...productionEnv(), KOMU_PRODUCTION_DIAGNOSTIC_DATABASE_URL: value })),
+  ])("rejects missing/mismatched/redirection configuration before any I/O (case %#)", async (input) => {
+    const db = dependencies();
+    const report = await diagnoseProductionNeonConnectivity(input, db.deps);
+    expect(report.configuration).toBe(false);
+    expect(report.failure?.category).toBe("INVALID_TARGET_CONFIGURATION");
+    expect(db.deps.lookup).not.toHaveBeenCalled();
+    expect(db.deps.client).not.toHaveBeenCalled();
+  });
+  it("preserves original userinfo/query encoding and flags possible double encoding without repairing it", async () => {
+    const db = dependencies();
+    const original = productionUrl.replace("p%40ss%25word", "p%2540ss") + "&sslaccept=strict";
+    const input = { ...productionEnv(), KOMU_PRODUCTION_DIAGNOSTIC_DATABASE_URL: original };
+    expect(productionDiagnosticUrl(input)).toBe(original);
+    const report = await diagnoseProductionNeonConnectivity(input, db.deps);
+    expect(db.deps.client).toHaveBeenCalledExactlyOnceWith(original);
+    expect(report.possibleDoubleEncodedUserInfo).toBe(true);
+    expect(report.strictTlsOptionAppended).toBe(false);
+    expect(JSON.stringify(report)).not.toContain("p%2540ss");
+  });
+});
+
 describe("credential-free PostgreSQL SSL negotiation", () => {
+  it("uses the explicit production SNI when requested by the production path", async () => {
+    const socket = socketMock();
+    const tls = socketMock();
+    network.tcp.mockReturnValue(socket);
+    network.tls.mockReturnValue(tls);
+    const pending = probePostgresTls({ address: "192.0.2.1", family: 4 }, 5_000, PRODUCTION_NEON_HOST);
+    socket.emit("connect");
+    socket.emit("data", Buffer.from("S"));
+    expect(network.tls).toHaveBeenCalledWith({ socket, servername: PRODUCTION_NEON_HOST, rejectUnauthorized: true });
+    tls.emit("secureConnect");
+    expect(await pending).toEqual({ tcp: true, tls: true });
+  });
   it("sends only SSLRequest and verifies SNI/certificates on the approved host", async () => {
     const socket = socketMock();
     const tls = socketMock();

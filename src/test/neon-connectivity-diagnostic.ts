@@ -7,18 +7,19 @@ import { PrismaClient } from "@prisma/client";
 import {
   PAYOUT_TEST_HOST, PayoutPreflightError, databaseFailureKind, payoutTestUrl, preflightPayoutDatabase,
 } from "./payout-postgres-preflight";
+import { PRODUCTION_NEON_HOST, productionDiagnosticUrl } from "./production-neon-target";
 
 type Address = { address: string; family: number };
 type Probe = { tcp: boolean; tls: boolean | null };
 export type DiagnosticDependencies = {
-  lookup: () => Promise<Address[]>;
-  probe: (address: Address) => Promise<Probe>;
+  lookup: (hostname?: string) => Promise<Address[]>;
+  probe: (address: Address, hostname?: string) => Promise<Probe>;
   client: (url: string) => PrismaClient;
   preflight: (client: PrismaClient) => Promise<void>;
 };
 
 /** No credential/startup packet is sent: SSLRequest, then verified TLS only. */
-export function probePostgresTls(address: Address, deadlineMs = 5_000): Promise<Probe> {
+export function probePostgresTls(address: Address, deadlineMs = 5_000, hostname = PAYOUT_TEST_HOST): Promise<Probe> {
   return new Promise((resolve) => {
     let socket: Socket | undefined;
     let secure: TLSSocket | undefined;
@@ -46,7 +47,7 @@ export function probePostgresTls(address: Address, deadlineMs = 5_000): Promise<
           if (response.length !== 1 || response[0] !== 83) { finish(false); return; }
           try {
             secure = connectTls({
-              socket, servername: PAYOUT_TEST_HOST, rejectUnauthorized: true,
+              socket, servername: hostname, rejectUnauthorized: true,
             });
             secure.once("error", () => finish(false));
             secure.once("close", () => finish(false));
@@ -60,17 +61,17 @@ export function probePostgresTls(address: Address, deadlineMs = 5_000): Promise<
 }
 
 const defaults: DiagnosticDependencies = {
-  lookup: () => lookup(PAYOUT_TEST_HOST, { all: true, verbatim: true }),
-  probe: probePostgresTls,
+  lookup: (hostname = PAYOUT_TEST_HOST) => lookup(hostname, { all: true, verbatim: true }),
+  probe: (address, hostname = PAYOUT_TEST_HOST) => probePostgresTls(address, 5_000, hostname),
   client: (url) => new PrismaClient({ datasourceUrl: url, log: [] }),
   preflight: preflightPayoutDatabase,
 };
 
-async function boundedLookup(dependencies: DiagnosticDependencies): Promise<Address[]> {
+async function boundedLookup(dependencies: DiagnosticDependencies, hostname: string): Promise<Address[]> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      dependencies.lookup(),
+      dependencies.lookup(hostname),
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("DNS deadline")), 5_000); }),
     ]);
   } finally { clearTimeout(timer); }
@@ -82,9 +83,32 @@ export async function diagnoseNeonConnectivity(
   dependencies: DiagnosticDependencies = defaults,
   extendedTimeouts = false,
 ) {
+  return runConnectivityDiagnostic(env, dependencies, extendedTimeouts, false);
+}
+
+/** Connectivity only: does not authorize migration or require the pending schema. */
+export async function diagnoseProductionNeonConnectivity(
+  env: Readonly<Record<string, string | undefined>>,
+  dependencies: DiagnosticDependencies = defaults,
+) {
+  return runConnectivityDiagnostic(env, dependencies, false, true);
+}
+
+async function runConnectivityDiagnostic(
+  env: Readonly<Record<string, string | undefined>>,
+  dependencies: DiagnosticDependencies,
+  extendedTimeouts: boolean,
+  production: boolean,
+) {
+  const hostname = production ? PRODUCTION_NEON_HOST : PAYOUT_TEST_HOST;
   const report = {
     ok: false,
-    target: "neon-test", hostname: PAYOUT_TEST_HOST, database: "neondb", schema: "public",
+    target: production ? "production" : "neon-test", hostname, database: "neondb", schema: "public",
+    migrationApproved: false,
+    payoutPreflightApplicable: !production,
+    possibleDoubleEncodedUserInfo: false,
+    strictTlsOptionAppended: false,
+    inheritedDatabaseUrlIgnored: production && env.DATABASE_URL !== undefined,
     configuration: false,
     prismaStrictTls: true,
     connectTimeoutSeconds: 0, poolTimeoutSeconds: 0,
@@ -100,8 +124,11 @@ export async function diagnoseNeonConnectivity(
   let client: PrismaClient | undefined;
   let stage = "configuration";
   try {
-    const original = payoutTestUrl(env); // Before DNS, sockets, or client construction.
+    const original = production ? productionDiagnosticUrl(env) : payoutTestUrl(env);
+    // Both validators run before DNS, sockets, or client construction.
     const url = new URL(original);
+    report.possibleDoubleEncodedUserInfo = /%25[\da-f]{2}/i.test(url.username + url.password);
+    report.strictTlsOptionAppended = production && original !== env.KOMU_PRODUCTION_DIAGNOSTIC_DATABASE_URL;
     // Verify endpoint certificates before sending credentials, even when the
     // supplied Prisma URL only requires encryption. In-memory diagnostic only.
     url.searchParams.set("sslaccept", "strict");
@@ -115,7 +142,7 @@ export async function diagnoseNeonConnectivity(
     stage = "DNS";
     let addresses: Address[];
     try {
-      addresses = await boundedLookup(dependencies);
+      addresses = await boundedLookup(dependencies, hostname);
       addresses = addresses.filter((entry) => entry.family === 4 || entry.family === 6);
       report.dns = addresses.length > 0;
     } catch {
@@ -133,11 +160,11 @@ export async function diagnoseNeonConnectivity(
     stage = "TCP/TLS";
     report.network = await Promise.all(addresses.slice(0, 8).map(async (address, index) => ({
       family: address.family === 4 ? "IPv4" as const : "IPv6" as const,
-      index, ...await dependencies.probe(address),
+      index, ...await dependencies.probe(address, hostname),
     })));
     // Probe failures do not mask Prisma's own resolver/TLS stack. No transaction retries.
     stage = "Prisma connection/authentication";
-    client = dependencies.client(url.toString());
+    client = dependencies.client(production ? original : url.toString());
     const started = Date.now();
     try {
       await client.$connect();
@@ -163,10 +190,12 @@ export async function diagnoseNeonConnectivity(
       if (rows[0].readonly !== "on") throw new PayoutPreflightError("READ_ONLY_CHECK_FAILED", "read-only guard", "Read-only mode was not confirmed.");
       if (!report.select) throw new Error("SELECT check failed");
     }, { maxWait: 10_000, timeout: 15_000 });
-    stage = "full read-only preflight";
-    report.preflight = false;
-    await dependencies.preflight(client);
-    report.preflight = true;
+    if (!production) {
+      stage = "full read-only preflight";
+      report.preflight = false;
+      await dependencies.preflight(client);
+      report.preflight = true;
+    }
     // A broken address is visible, but an alternate verified TLS path may succeed.
     report.ok = report.network.some((probe) => probe.tls === true);
     if (!report.ok) report.failure = { category: "TLS_PROBE_FAILED", stage: "TCP/TLS", reason: "NO_VERIFIED_TLS_PATH" };
