@@ -1,5 +1,5 @@
 import type { GuildMember } from "discord.js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { rendezvous, TransactionalPayoutStore, type PayoutFailure } from "@/test/transactional-payout-store";
 
@@ -20,8 +20,12 @@ vi.mock("@/lib/logger", () => ({
 
 // Deliberately do not mock awardXp: the real ledger and cached-total writes
 // must share the payout's transaction, or rollback assertions below fail.
+import { health } from "@/lib/monitoring/health";
+
 import { awardXp } from "@/lib/xp/award-xp";
 import { grantChallengeCompletions } from "./grant-completion";
+
+afterEach(() => vi.restoreAllMocks());
 
 let store: TransactionalPayoutStore;
 const member = (id = "member-1") => ({ id: `discord-${id}` }) as GuildMember;
@@ -220,4 +224,14 @@ describe("atomic challenge payouts (offline row-lock/rollback model)", () => {
     expect(store.members.get("member-1")?.xp).toBe(250);
     expect(store.ledger).toHaveLength(1);
   });
+});
+
+
+it("preserves row locking and exactly-once XP even when the monitor throws", async () => {
+  vi.spyOn(health, "begin").mockImplementation(() => { throw Error("broken observer"); });
+  store.beforeCandidates = rendezvous(2);
+  await Promise.all([grantChallengeCompletions(input()), grantChallengeCompletions(input())]);
+  expectPaidOnce();
+  expect(store.lockWaits).toBeGreaterThan(0);
+  expect(state.addRole).toHaveBeenCalledTimes(1);
 });

@@ -2,6 +2,9 @@ import "server-only";
 
 import type { StreamingProvider } from "@prisma/client";
 
+import { classifyError, type ErrorCode } from "@/lib/monitoring/errors";
+import { observeOperation } from "@/lib/monitoring/health";
+
 import { prisma } from "@/lib/db";
 import { sendChannelMessage } from "@/lib/discord/rest";
 import { createLogger } from "@/lib/logger";
@@ -33,9 +36,9 @@ export interface CycleResult {
   checked: number;
   /** Alerts successfully posted. */
   alerted: number;
-  /** Alerts that failed, with the reason. */
+  /** Failed operations; only fixed provider labels and safe error codes. */
   failed: Array<{ channel: string; reason: string }>;
-  /** Channels whose status could not be read. */
+  /** Intentionally skipped work (unconfigured services/destinations). */
   skipped: number;
   /** Channels whose status was read but produced nothing to do. */
   unchanged: number;
@@ -75,31 +78,32 @@ export async function runStreamDetectionCycle(
     unchanged: 0,
   };
 
-  const channels = await loadAlertableChannels(providers);
+  const channels = await observeOperation("database.stream-load", "postgres", () => loadAlertableChannels(providers));
 
   for (const channel of channels) {
     result.checked += 1;
 
     try {
       const outcome = await processChannel(channel);
-      if (outcome === "ALERTED") result.alerted += 1;
+      if (typeof outcome === "object") result.failed.push({ channel: channel.provider, reason: outcome.code });
+      else if (outcome === "ALERTED") result.alerted += 1;
       else if (outcome === "SKIPPED") result.skipped += 1;
       else result.unchanged += 1;
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown";
+      const reason = classifyError(error, "postgres");
       log.error("Detection cycle failed for a channel", {
         streamingAccountId: channel.streamingAccountId,
         provider: channel.provider,
         reason,
       });
-      result.skipped += 1;
+      result.failed.push({ channel: channel.provider, reason });
     }
   }
 
   return result;
 }
 
-type ChannelOutcome = "ALERTED" | "UNCHANGED" | "SKIPPED";
+type ChannelOutcome = "ALERTED" | "UNCHANGED" | "SKIPPED" | { code: ErrorCode };
 
 async function processChannel(channel: AlertableChannel): Promise<ChannelOutcome> {
   const adapter = getStreamingProvider(channel.provider);
@@ -112,32 +116,30 @@ async function processChannel(channel: AlertableChannel): Promise<ChannelOutcome
   let stream: StreamInfo | null;
 
   try {
-    stream = await adapter.getLiveStream({
+    stream = await observeOperation(`provider.${channel.provider}`, "provider", () => adapter.getLiveStream({
       providerUserId: channel.providerUserId,
       username: channel.username,
       displayName: channel.displayName,
       avatarUrl: null,
-    });
+    }));
   } catch (error) {
     // Provider unavailable. Leave the existing session alone rather than
     // closing it, so a brief outage does not look like the stream ended.
     log.warn("Could not read live status during detection", {
       streamingAccountId: channel.streamingAccountId,
       provider: channel.provider,
-      reason: error instanceof Error ? error.message : "unknown",
+      reason: classifyError(error, "provider"),
     });
-    return "SKIPPED";
+    return { code: classifyError(error, "provider") };
   }
 
-  const known = await loadLatestSession(channel.streamingAccountId);
+  const known = await observeOperation("database.stream-session", "postgres", () => loadLatestSession(channel.streamingAccountId));
   const decision = decideAlertAction(stream, known);
 
   if (decision.action === "CLOSE_SESSION") {
     if (decision.providerStreamId) {
-      await closeSession(
-        channel.streamingAccountId,
-        decision.providerStreamId,
-      );
+      const closed = await closeSession(channel.streamingAccountId, decision.providerStreamId);
+      if (!closed) return { code: "DATABASE_REQUEST_FAILED" };
       log.info("Stream ended", {
         streamingAccountId: channel.streamingAccountId,
         providerStreamId: decision.providerStreamId,
@@ -153,7 +155,8 @@ async function processChannel(channel: AlertableChannel): Promise<ChannelOutcome
   // A new session. Record it first, then send. Recording first means a crash
   // between the two loses an alert rather than sending duplicates later.
   const liveStream = decision.stream;
-  const session = await recordSession(channel, liveStream);
+  const session = await observeOperation("database.stream-record", "postgres", () => recordSession(channel, liveStream),
+    result => result.created ? "success" : "skipped");
 
   if (!session.created || !session.id) {
     // Another pass created it first.
@@ -165,31 +168,31 @@ async function processChannel(channel: AlertableChannel): Promise<ChannelOutcome
       streamingAccountId: channel.streamingAccountId,
       providerStreamId: liveStream.providerStreamId,
     });
-    return "UNCHANGED";
+    return "SKIPPED";
   }
 
   const sent = await deliverAlert(channel, liveStream, session.id);
-  return sent ? "ALERTED" : "UNCHANGED";
+  return sent;
 }
 
 /**
  * Post the alert and mark the session as announced.
  *
- * Marking happens only on success, so a failed send is retried on the next
- * pass instead of being silently lost.
+ * Existing delivery behavior is preserved: an existing session is not resent.
+ * Reporting failures here must not introduce retries.
  */
 async function deliverAlert(
   channel: AlertableChannel,
   stream: StreamInfo,
   streamRowId: string,
-): Promise<boolean> {
+): Promise<ChannelOutcome> {
   const settings = channel.settings;
 
   if (!settings?.channelId) {
     log.warn("Alert channel not set", {
       streamingAccountId: channel.streamingAccountId,
     });
-    return false;
+    return "SKIPPED";
   }
 
   const creatorName = channel.displayName ?? channel.username;
@@ -198,39 +201,48 @@ async function deliverAlert(
   if (message.error) {
     log.warn("Cannot build alert", {
       streamingAccountId: channel.streamingAccountId,
-      reason: message.error,
+      reason: "STREAM_CONFIGURATION_INVALID",
     });
-    return false;
+    return { code: "STREAM_CONFIGURATION_INVALID" };
   }
 
-  const result = await sendChannelMessage(settings.channelId, {
-    content: message.content,
-    embeds: message.embeds,
-    components: message.components,
-    allowedMentions: message.allowedMentions,
-  });
+  let result: Awaited<ReturnType<typeof sendChannelMessage>>;
+  try {
+    result = await sendChannelMessage(settings.channelId, {
+      content: message.content,
+      embeds: message.embeds,
+      components: message.components,
+      allowedMentions: message.allowedMentions,
+    });
+  } catch (error) {
+    return { code: classifyError(error, "discord") };
+  }
 
   if (!result.ok) {
     log.warn("Alert could not be delivered", {
       streamingAccountId: channel.streamingAccountId,
       channelId: settings.channelId,
       code: result.code,
-      reason: result.error,
+      reason: classifyError(result, "discord"),
     });
-    return false;
+    return { code: classifyError(result, "discord") };
   }
 
-  // Only now record that this session was announced. Doing it after the
-  // send means a failure is retried rather than lost.
-  await prisma.stream.update({
-    where: { id: streamRowId },
-    data: {
-      alertSentAt: new Date(),
-      // Stored so a reaction on the alert can be matched back to this
-      // session, which is how attendance is counted.
-      alertMessageId: result.messageId ?? null,
-    },
-  });
+  // Record acceptance without changing the existing no-resend behavior.
+  try {
+    await observeOperation("database.stream-delivery", "postgres", () => prisma.stream.update({
+      where: { id: streamRowId },
+      data: {
+        alertSentAt: new Date(),
+        // Stored so a reaction on the alert can be matched back to this
+        // session, which is how attendance is counted.
+        alertMessageId: result.messageId ?? null,
+      },
+    }));
+  } catch {
+    // Discord accepted the message; report uncertainty without sending again.
+    return { code: "STREAM_DELIVERY_RECORD_FAILED" };
+  }
 
   log.info("Live alert sent", {
     streamingAccountId: channel.streamingAccountId,
@@ -239,7 +251,7 @@ async function deliverAlert(
     providerStreamId: stream.providerStreamId,
   });
 
-  return true;
+  return "ALERTED";
 }
 
 /**
@@ -352,8 +364,8 @@ async function recordSession(
 async function closeSession(
   streamingAccountId: string,
   providerStreamId: string,
-): Promise<void> {
-  await prisma.stream
+): Promise<boolean> {
+  return observeOperation("database.stream-close", "postgres", () => prisma.stream
     .update({
       where: {
         streamingAccountId_providerStreamId: {
@@ -363,5 +375,5 @@ async function closeSession(
       },
       data: { endedAt: new Date() },
     })
-    .catch(() => undefined);
+    .then(() => true)).catch(() => false);
 }
