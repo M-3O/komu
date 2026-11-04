@@ -14,6 +14,8 @@ import {
   type ChallengeActivity,
   type UpdateChallengesResult,
 } from "@/lib/challenges/record-progress";
+import { observeOperation } from "@/lib/monitoring/health";
+
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { applyRoleRulesForMember, type ApplyRolesResult } from "@/lib/roles/apply-rules";
@@ -66,10 +68,10 @@ export async function applyProgressionForMember(
   guildDbId: string,
   options: ProgressionOptions,
 ): Promise<ProgressionResult> {
-  const dbMember = await prisma.guildMember.findFirst({
+  const dbMember = await observeOperation("database.progression", "postgres", () => prisma.guildMember.findFirst({
     where: { guildId: guildDbId, discordId: member.id },
     select: { id: true, level: true },
-  });
+  }));
 
   // Nothing is tracked for this member yet, so nothing can be measured.
   if (!dbMember) {
@@ -91,26 +93,28 @@ export async function applyProgressionForMember(
     };
   }
 
-  const roles = await applyRoleRulesForMember(member, guildDbId);
+  const roles = await observeOperation("job.roles", "job", () => applyRoleRulesForMember(member, guildDbId),
+    value => value.failed.length ? "JOB_PARTIAL" : value.assigned.length ? "success" : "skipped");
 
-  const rewards = await grantEligibleRewards({
+  const rewards = await observeOperation("job.rewards", "job", () => grantEligibleRewards({
     member,
     guildId: guildDbId,
     ...(options.manualByDiscordId ? { manualByDiscordId: options.manualByDiscordId } : {}),
     ...(options.onlyRewardId ? { onlyRewardId: options.onlyRewardId } : {}),
-  });
+  }), value => value.failed.length ? "JOB_PARTIAL" : value.granted.length ? "success" : "skipped");
 
   // Challenges run after rewards: a reward's XP can push a member over a level
   // threshold, and the challenge should see the level it just produced rather
   // than the one from before.
-  const challengeProgress = await updateChallengeProgress({
+  const challengeProgress = await observeOperation("job.challenge-progress", "job", () => updateChallengeProgress({
     guildId: guildDbId,
     memberId: dbMember.id,
     level: dbMember.level,
     activity: options.activity,
-  });
+  }), value => value.updated.length || value.completed.length ? "success" : "skipped");
 
-  const payouts = await grantChallengeCompletions({ member, guildId: guildDbId });
+  const payouts = await observeOperation("job.challenge-payout", "job", () => grantChallengeCompletions({ member, guildId: guildDbId }),
+    value => value.partial.length ? "JOB_PARTIAL" : value.granted.length ? "success" : "skipped");
 
   // Announcements are a side effect of progression, not part of it. Keep any
   // unexpected failure here from skipping achievements or disturbing the
@@ -118,10 +122,10 @@ export async function applyProgressionForMember(
   let announcements: ChallengeAnnouncementResult;
 
   try {
-    announcements = await announceChallengeCompletions({
+    announcements = await observeOperation("job.challenge-announcement", "job", () => announceChallengeCompletions({
       member,
       guildId: guildDbId,
-    });
+    }), value => value.failed.length ? "JOB_PARTIAL" : value.announced.length ? "success" : "skipped");
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : "Unknown announcement error";
@@ -141,7 +145,8 @@ export async function applyProgressionForMember(
   // Achievements run last: they read lifetime totals, so they should see
   // anything the rewards and challenges just added rather than the values
   // from before.
-  const achievements = await unlockAchievementsForMember({ member, guildId: guildDbId });
+  const achievements = await observeOperation("job.achievements", "job", () => unlockAchievementsForMember({ member, guildId: guildDbId }),
+    value => value.partial.length ? "JOB_PARTIAL" : value.unlocked.length ? "success" : "skipped");
 
   return {
     roles,
@@ -163,7 +168,9 @@ export async function tryApplyProgression(
   options: ProgressionOptions,
 ): Promise<ProgressionResult | null> {
   try {
-    return await applyProgressionForMember(member, guildDbId, options);
+    return await observeOperation("job.progression", "job", () => applyProgressionForMember(member, guildDbId, options),
+      value => value.roles.failed.length || value.rewards.failed.length || value.challenges.payouts.partial.length ||
+        value.challenges.announcements.failed.length || value.achievements.partial.length ? "JOB_PARTIAL" : "success");
   } catch (error) {
     log.error("Progression check failed", {
       guildId: member.guild.id,

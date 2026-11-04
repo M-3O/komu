@@ -2,6 +2,8 @@ import { Prisma, XPSource } from "@prisma/client";
 import type { GuildMember } from "discord.js";
 
 import { addRoleToMember } from "@/bot/services/moderation";
+import { observeOperation } from "@/lib/monitoring/health";
+
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { awardXp } from "@/lib/xp/award-xp";
@@ -85,7 +87,7 @@ export async function grantChallengeCompletions(input: {
     let paid: boolean;
 
     try {
-      paid = await prisma.$transaction(async (tx) => {
+      paid = await observeOperation("database.challenge-payout", "postgres", () => prisma.$transaction(async (tx) => {
         // The initial findMany is only a candidate list. PostgreSQL locks the
         // row and re-evaluates this predicate after a concurrent owner commits.
         const unpaid = await tx.$queryRaw<Array<{ id: string }>>`
@@ -137,7 +139,7 @@ export async function grantChallengeCompletions(input: {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
         maxWait: 10_000,
         timeout: 15_000,
-      });
+      }), paid => paid ? "success" : "skipped");
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown payout error";
       result.partial.push({ challenge: challenge.name, reason });

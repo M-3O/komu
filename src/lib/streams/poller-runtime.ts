@@ -2,6 +2,8 @@ import "server-only";
 
 import type { StreamingProvider } from "@prisma/client";
 
+import { classifyError, isErrorCode } from "@/lib/monitoring/errors";
+
 import { createLogger } from "@/lib/logger";
 import { runStreamDetectionCycle, type CycleResult } from "./poller";
 
@@ -33,6 +35,7 @@ interface PollerState {
   registeredAt: number;
   lastStartedAt: number | null;
   lastFinishedAt: number | null;
+  lastSucceededAt: number | null;
   lastResult: CycleResult | null;
   lastError: string | null;
 }
@@ -46,6 +49,7 @@ export interface StreamPollerSnapshot {
   registeredAt: string;
   lastStartedAt: string | null;
   lastFinishedAt: string | null;
+  lastSucceededAt: string | null;
   lastResult: CycleResult | null;
   lastError: string | null;
 }
@@ -100,6 +104,7 @@ export function startStreamPoller(
     registeredAt: Date.now(),
     lastStartedAt: null,
     lastFinishedAt: null,
+    lastSucceededAt: null,
     lastResult: null,
     lastError: null,
   };
@@ -112,23 +117,29 @@ export function startStreamPoller(
 
     state.inFlight = true;
     state.lastStartedAt = Date.now();
-    state.lastError = null;
 
     try {
       const result = await runStreamDetectionCycle(options.providers);
-      state.lastResult = result;
+      // Never retain account labels or raw reasons in the status snapshot.
+      state.lastResult = { checked: result.checked, alerted: result.alerted, skipped: result.skipped, unchanged: result.unchanged, failed: result.failed.slice(0, 32).map(failure => ({
+        channel: ["TWITCH", "KICK", "YOUTUBE"].includes(failure.channel) ? failure.channel : "stream",
+        reason: isErrorCode(failure.reason) ? failure.reason : "JOB_FAILED",
+      })) };
+      if (result.failed.length === 0) {
+        state.lastSucceededAt = Date.now();
+        state.lastError = null;
+      } else state.lastError = "JOB_PARTIAL";
 
       // Only log when something happened, so an idle server stays quiet.
       if (result.alerted > 0 || result.failed.length > 0) {
         log.info("Poller cycle", {
           key,
           providers: options.providers?.join(",") ?? "all",
-          ...result,
+          ...state.lastResult,
         });
       }
     } catch (error) {
-      state.lastError =
-        error instanceof Error ? error.message : "unknown";
+      state.lastError = classifyError(error, "job");
 
       log.error("Poller cycle failed", {
         key,
@@ -176,7 +187,8 @@ export function getStreamPollerStatus(): StreamPollerSnapshot[] {
         state.lastFinishedAt === null
           ? null
           : new Date(state.lastFinishedAt).toISOString(),
-      lastResult: state.lastResult,
+      lastSucceededAt: state.lastSucceededAt === null ? null : new Date(state.lastSucceededAt).toISOString(),
+      lastResult: state.lastResult ? { ...state.lastResult, failed: state.lastResult.failed.map(failure => ({ ...failure })) } : null,
       lastError: state.lastError,
     }));
 }

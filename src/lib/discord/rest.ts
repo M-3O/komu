@@ -1,5 +1,8 @@
 import "server-only";
 
+import { classifyError } from "@/lib/monitoring/errors";
+import { observeOperation } from "@/lib/monitoring/health";
+
 import { createLogger } from "@/lib/logger";
 import {
   fetchWithTimeout,
@@ -68,6 +71,14 @@ async function discordRequest<T>(
   path: string,
   body?: unknown,
 ): Promise<{ ok: true; data: T } | { ok: false; result: DiscordWriteResult }> {
+  return observeOperation(method === "GET" ? "discord.read" : "discord.write", "discord",
+    () => performDiscordRequest<T>(method, path, body),
+    result => result.ok ? "success" : classifyError({ code: result.result.code, status: result.status }, "discord"));
+}
+
+async function performDiscordRequest<T>(
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown,
+): Promise<{ ok: true; data: T } | { ok: false; result: DiscordWriteResult; status?: number }> {
   let response: Response;
 
   try {
@@ -98,7 +109,7 @@ async function discordRequest<T>(
     log.error("Discord request failed", {
       method,
       path,
-      reason: error instanceof Error ? error.message : "unknown",
+      reason: classifyError(error, "discord"),
     });
     return {
       ok: false,
@@ -135,6 +146,7 @@ async function discordRequest<T>(
 
   return {
     ok: false,
+    status: response.status,
     result: {
       ok: false,
       error: message,

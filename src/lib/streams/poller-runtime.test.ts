@@ -216,7 +216,7 @@ describe("stream poller", () => {
     expect(getStreamPollerStatus()[0]).toMatchObject({
       inFlight: false,
       lastResult: null,
-      lastError: "provider exploded",
+      lastError: "JOB_FAILED",
       lastFinishedAt: expect.any(String),
     });
   });
@@ -226,5 +226,30 @@ describe("stream poller", () => {
     stopStreamPoller();
 
     expect(getStreamPollerStatus()).toEqual([]);
+  });
+});
+
+
+describe("safe and accurate cycle snapshots", () => {
+  it("keeps the previous success time when a later cycle partially fails", async () => {
+    runStreamDetectionCycle.mockResolvedValueOnce(QUIET_CYCLE)
+      .mockResolvedValue({ ...QUIET_CYCLE, checked: 1, failed: [{ channel: "TWITCH", reason: "DISCORD_PERMISSION_DENIED" }] });
+    startStreamPoller(1_000, { key: "fast" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const success = getStreamPollerStatus()[0].lastSucceededAt;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(getStreamPollerStatus()[0]).toMatchObject({ lastSucceededAt: success, lastError: "JOB_PARTIAL" });
+    expect(getStreamPollerStatus()[0].lastFinishedAt).not.toBe(success);
+  });
+  it("bounds stored failures and strips unknown context and raw reasons", async () => {
+    runStreamDetectionCycle.mockResolvedValue({ ...QUIET_CYCLE, checked: 100,
+      secret: "canary-secret", failed: Array.from({ length: 100 }, () => ({ channel: "canary-secret", reason: "postgresql://canary-secret", stack: "canary-secret" })) });
+    startStreamPoller(1_000, { key: "fast" }); await vi.advanceTimersByTimeAsync(1_000);
+    const first = getStreamPollerStatus()[0];
+    expect(first.lastResult?.failed).toHaveLength(32);
+    expect(first.lastSucceededAt).toBeNull();
+    expect(JSON.stringify(first)).not.toContain("canary-secret");
+    first.lastResult!.failed[0].reason = "changed";
+    expect(getStreamPollerStatus()[0].lastResult?.failed[0].reason).toBe("JOB_FAILED");
   });
 });
