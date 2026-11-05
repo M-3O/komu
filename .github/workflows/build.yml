@@ -31,6 +31,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify worker root builder selection
+        if: hashFiles('railpack.json') != ''
+        run: |
+          test ! -e Dockerfile
+          test ! -e dockerfile
+          test -f Dockerfile.worker.fallback
+          test -f Dockerfile.worker.fallback.dockerignore
+          test -f deploy/bot/Dockerfile
+          test -f deploy/bot/Dockerfile.dockerignore
+
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -88,3 +98,48 @@ jobs:
             -e NODE_ENV=production \
             -e 'DATABASE_URL=postgresql://ci:ci@127.0.0.1:9/komu_ci?connect_timeout=1' \
             --entrypoint node komu-bot:ci --import tsx scripts/check-bot.ts
+
+
+      # Worker-branch only. Planning/building images is not a CranL deployment.
+      - name: Install pinned Railpack for worker verification
+        if: hashFiles('railpack.json') != ''
+        run: |
+          curl --fail --location --retry 2 \
+            https://github.com/railwayapp/railpack/releases/download/v0.43.0/railpack-v0.43.0-x86_64-unknown-linux-musl.tar.gz \
+            --output "$RUNNER_TEMP/railpack.tar.gz"
+          printf '%s  %s\n' '248a8f60f36854aabed6124113631078a802de3461660855fc4de9c26065c1fb' "$RUNNER_TEMP/railpack.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/railpack-bin"
+          tar -xzf "$RUNNER_TEMP/railpack.tar.gz" -C "$RUNNER_TEMP/railpack-bin"
+          echo "$RUNNER_TEMP/railpack-bin" >> "$GITHUB_PATH"
+
+      - name: Prepare and inspect worker Railpack plan
+        if: hashFiles('railpack.json') != ''
+        run: |
+          railpack prepare --config-file railpack.json --plan-out "$RUNNER_TEMP/worker-railpack-plan.json" .
+          node scripts/verify-worker-railpack-plan.cjs "$RUNNER_TEMP/worker-railpack-plan.json"
+
+      - name: Build worker image using Railpack frontend
+        if: hashFiles('railpack.json') != ''
+        run: |
+          docker buildx build --load --tag komu-bot:railpack-ci \
+            --build-arg BUILDKIT_SYNTAX=ghcr.io/railwayapp/railpack-frontend:v0.43.0 \
+            --file "$RUNNER_TEMP/worker-railpack-plan.json" .
+
+      - name: Verify Railpack worker image offline without starting the bot
+        if: hashFiles('railpack.json') != ''
+        run: |
+          docker image inspect komu-bot:railpack-ci --format '{{json .Config.Env}}' |
+            node -e 'let s=""; process.stdin.on("data", c => s+=c); process.stdin.on("end", () => { if (JSON.parse(s).some(v => /^(DATABASE_URL|KOMU_NEON_TEST_DATABASE_URL|DISCORD_BOT_TOKEN|BOT_MONITORING_SECRET)=/.test(v))) throw Error("Forbidden runtime configuration in image"); });'
+          docker run --rm --network none --entrypoint node komu-bot:railpack-ci -e '
+            const fs=require("node:fs"),path=require("node:path");
+            if(process.versions.node.split(".")[0]!=="24")throw Error("Node 24 required");
+            require.resolve("tsx");
+            require.resolve("@prisma/client");
+            const root=path.resolve("node_modules/.prisma/client");
+            const binary=fs.readdirSync(root).find(n=>/^libquery_engine-.*\.so\.node$/.test(n));
+            if(!binary)throw Error("Native Linux Prisma engine missing");
+            require(path.join(root,binary));
+            if(fs.readdirSync(".").some(n=>n===".env"||n.startsWith(".env.")))throw Error("Environment file in image");'
+          docker run --rm --network none \
+            -e 'DATABASE_URL=postgresql://ci:ci@127.0.0.1:9/komu_ci?connect_timeout=1' \
+            --entrypoint node komu-bot:railpack-ci --import tsx scripts/check-bot.ts

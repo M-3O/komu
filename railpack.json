@@ -1,0 +1,74 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "packages": {
+    "node": "24"
+  },
+  "buildAptPackages": [
+    "openssl",
+    "ca-certificates"
+  ],
+  "secrets": [],
+  "exclude": [
+    ".git",
+    "node_modules",
+    ".next",
+    ".env",
+    ".env.*",
+    "**/.env",
+    "**/.env.*",
+    "**/.npmrc",
+    "**/*.pem",
+    "**/*.key",
+    "**/*.log",
+    ".railpack-verification-*"
+  ],
+  "steps": {
+    "install": {
+      "inputs": [
+        "...",
+        {
+          "local": true,
+          "include": [
+            "package.json",
+            "package-lock.json"
+          ]
+        }
+      ],
+      "commands": [
+        "PRISMA_SKIP_POSTINSTALL_GENERATE=true npm ci --include=dev --no-audit --no-fund"
+      ],
+      "secrets": []
+    },
+    "build": {
+      "commands": [
+        "npm run build:bot",
+        "npm prune --omit=dev --ignore-scripts --no-audit --no-fund"
+      ],
+      "secrets": []
+    },
+    "prune": {
+      "secrets": []
+    }
+  },
+  "deploy": {
+    "startCommand": "exec node --import tsx src/bot/bootstrap.ts",
+    "variables": {
+      "NODE_ENV": "production",
+      "PORT": "3001"
+    },
+    "aptPackages": [
+      "openssl",
+      "ca-certificates"
+    ],
+    "inputs": [
+      "...",
+      {
+        "step": "build",
+        "include": [
+          "node_modules/.prisma"
+        ]
+      }
+    ]
+  }
+}

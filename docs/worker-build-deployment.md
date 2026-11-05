@@ -1,3 +1,5 @@
+> Worker deployment update: use [worker-railpack-deployment.md](worker-railpack-deployment.md). The root Docker files are now Dockerfile.worker.fallback and Dockerfile.worker.fallback.dockerignore; the nested deploy/bot Docker files are unchanged. The following historical Docker preparation instructions are retained for reference. Do not restore conventional root Dockerfile names or repeat source changes without review.
+
 # Isolated worker build and CranL release procedure
 
 Status: prepared locally, not deployed. No CranL settings were accessed/changed.
