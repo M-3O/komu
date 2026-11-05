@@ -1,3 +1,5 @@
+import { dispatchBotWork } from "../work-tracker";
+
 import { Events } from "discord.js";
 import type {
   Client,
@@ -27,7 +29,7 @@ export function registerMessageReactionAdd(client: Client): void {
   client.on(
     Events.MessageReactionAdd,
     (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
-      void onReactionAdd(reaction, user);
+      dispatchBotWork(() => onReactionAdd(reaction, user));
     },
   );
 }

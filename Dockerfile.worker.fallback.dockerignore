@@ -1,0 +1,22 @@
+# Worker-specific allowlist; does not affect the dashboard/Railpack context.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/
+!src/**
+!prisma/
+!prisma/schema.prisma
+!deploy/
+!deploy/bot/
+!deploy/bot/prisma-generate.config.ts
+!scripts/
+!scripts/check-bot.ts
+# Final exclusions also cover accidental secrets below allowed source directories.
+**/.env*
+**/.npmrc
+**/*.pem
+**/*.key
+**/*.log
+**/*.test.ts
+src/test/

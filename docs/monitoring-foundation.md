@@ -7,7 +7,7 @@ or environment settings. Existing public bot health responses are unchanged.
 ## Registry and classification
 
 Use the fixed Component union in src/lib/monitoring/health.ts. Never construct
-keys from guilds, members, channels, URLs, messages or error text. At most 19
+keys from guilds, members, channels, URLs, messages or error text. At most 20
 entries exist, each with scalar timestamps, bounded counters and one fixed
 ErrorCode. There is no retained event history, exception, promise or payload.
 The shared registry lives on globalThis within each process; it is not shared
