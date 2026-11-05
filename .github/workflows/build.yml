@@ -61,3 +61,30 @@ jobs:
         run: npm run build:bot
         env:
           NODE_ENV: production
+
+      # Isolated worker image; never push it or invoke its bot entrypoint.
+      - name: Build worker Docker image
+        run: docker build --file deploy/bot/Dockerfile --tag komu-bot:ci .
+
+      - name: Verify worker image has no baked database URL
+        run: |
+          docker image inspect komu-bot:ci --format '{{json .Config.Env}}' |
+            node -e 'let s=""; process.stdin.on("data", c => s+=c); process.stdin.on("end", () => { if (JSON.parse(s).some(v => /^(DATABASE_URL|KOMU_NEON_TEST_DATABASE_URL|DISCORD_BOT_TOKEN|BOT_MONITORING_SECRET)=/.test(v))) throw Error("Worker image contains forbidden runtime configuration"); });'
+
+      - name: Verify worker native Prisma engine without networking
+        run: |
+          docker run --rm --network none --entrypoint node komu-bot:ci -e '
+            const fs=require("node:fs"), path=require("node:path");
+            const directory=path.resolve("node_modules/.prisma/client");
+            const binary=fs.readdirSync(directory).find(name => /^libquery_engine-.*\.so\.node$/.test(name));
+            if (!binary) throw Error("Generated Linux Prisma engine missing");
+            require(path.join(directory,binary));
+            if (fs.existsSync(".env") || fs.existsSync(".env.local")) throw Error("Environment file in worker image");
+            console.log("Generated native Prisma engine loaded; no database connection attempted");'
+
+      - name: Verify direct Node worker imports without networking or login
+        run: |
+          docker run --rm --network none \
+            -e NODE_ENV=production \
+            -e 'DATABASE_URL=postgresql://ci:ci@127.0.0.1:9/komu_ci?connect_timeout=1' \
+            --entrypoint node komu-bot:ci --import tsx scripts/check-bot.ts
