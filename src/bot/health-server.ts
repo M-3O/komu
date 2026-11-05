@@ -1,3 +1,7 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
+import { projectBotSnapshot, type BotMonitoringSnapshot } from "./monitoring-snapshot";
+
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 
@@ -21,6 +25,7 @@ export interface BotHealthServerOptions {
   isReady: () => boolean;
   /** Process start time, used for the uptime value. */
   startedAt?: number;
+  monitoring?: { secret: string | undefined; snapshot: () => BotMonitoringSnapshot };
 }
 
 export interface BotHealthServer {
@@ -49,8 +54,34 @@ export async function startBotHealthServer(
   const startedAt = options.startedAt ?? Date.now();
   const port = options.port ?? readBotHealthPort();
 
-  const server = createServer((request, response) => {
+  const secret = options.monitoring?.secret;
+  const configured = typeof secret === "string" && /^[\x21-\x7e]{32,256}$/.test(secret);
+  const expected = configured ? createHash("sha256").update(secret!).digest() : undefined;
+
+  const server = createServer({ maxHeaderSize: 8_192 }, (request, response) => {
     const pathname = (request.url ?? "/").split("?")[0];
+
+    if (pathname === "/internal/health") {
+      const json = (status: number, value: unknown) => {
+        const body = JSON.stringify(value);
+        response.writeHead(status, { "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store", "Content-Length": Buffer.byteLength(body) });
+        response.end(request.method === "HEAD" ? undefined : body);
+      };
+      if (!expected) { json(503, { error: "Monitoring unavailable." }); return; }
+      const provided = request.headers["x-komu-monitoring-secret"];
+      if (typeof provided !== "string" || provided.length > 256 ||
+          !timingSafeEqual(createHash("sha256").update(provided).digest(), expected)) {
+        json(401, { error: "Not authorised." }); return;
+      }
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        response.writeHead(405, { Allow: "GET, HEAD", "Cache-Control": "no-store" });
+        response.end(); return;
+      }
+      try { json(200, projectBotSnapshot(options.monitoring!.snapshot())); }
+      catch { json(503, { error: "Monitoring unavailable." }); }
+      return;
+    }
 
     if (pathname !== "/" && pathname !== "/health") {
       response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -87,6 +118,9 @@ export async function startBotHealthServer(
     response.end(request.method === "HEAD" ? undefined : body);
   });
 
+  server.headersTimeout = 5_000;
+  server.requestTimeout = 5_000;
+
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => {
       server.off("listening", onListening);
@@ -114,6 +148,7 @@ export async function startBotHealthServer(
       if (!server.listening) return;
 
       await new Promise<void>((resolve, reject) => {
+        server.closeIdleConnections();
         server.close((error) => {
           if (error) reject(error);
           else resolve();

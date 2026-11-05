@@ -1,3 +1,6 @@
+import { dispatchBotWork } from "../work-tracker";
+import { classifyError } from "@/lib/monitoring/errors";
+
 import { ActivityType, Events } from "discord.js";
 import type { Client } from "discord.js";
 
@@ -14,25 +17,27 @@ const log = createLogger("bot");
  * looks wrong.
  */
 export function registerReady(client: Client): void {
-  client.on(Events.ClientReady, async (readyClient) => {
-    log.info("Bot is online", {
-      user: readyClient.user.tag,
-      guilds: readyClient.guilds.cache.size,
-    });
-
-    readyClient.user.setActivity("with your community", {
-      type: ActivityType.Watching,
-    });
-
-    for (const guild of readyClient.guilds.cache.values()) {
-      log.info("In server", {
-        guildId: guild.id,
-        name: guild.name,
-        members: guild.memberCount,
+  client.on(Events.ClientReady, (readyClient) => {
+    dispatchBotWork(async () => {
+      log.info("Bot is online", {
+        user: readyClient.user.tag,
+        guilds: readyClient.guilds.cache.size,
       });
-    }
 
-    await reportGuildMatch(readyClient);
+      readyClient.user.setActivity("with your community", {
+        type: ActivityType.Watching,
+      });
+
+      for (const guild of readyClient.guilds.cache.values()) {
+        log.info("In server", {
+          guildId: guild.id,
+          name: guild.name,
+          members: guild.memberCount,
+        });
+      }
+
+      await reportGuildMatch(readyClient);
+    });
   });
 
   client.on(Events.GuildCreate, (guild) => {
@@ -42,7 +47,7 @@ export function registerReady(client: Client): void {
   // Useful when diagnosing a connection problem; the bot drops and reconnects
   // on its own, so this is informational.
   client.on(Events.Error, (error) => {
-    log.error("Client error", { reason: error.message });
+    log.error("Client error", { reason: classifyError(error, "discord") });
   });
 
   // The bot reconnects automatically, so a status change is worth logging but
@@ -51,7 +56,7 @@ export function registerReady(client: Client): void {
     if (message.includes("resume") || message.includes("disconnect")) {
       log.warn("Gateway status change", {
         status: client.ws.status,
-        detail: message.slice(0, 200),
+        reason: "GATEWAY_STATE_CHANGE",
       });
     }
   });
