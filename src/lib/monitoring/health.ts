@@ -6,7 +6,7 @@ export const COMPONENTS = [
   "database.stream-record", "database.stream-close", "database.stream-delivery", "database.progression",
   "database.challenge-payout", "provider.TWITCH", "provider.KICK", "provider.YOUTUBE",
   "job.roles", "job.rewards", "job.challenge-progress", "job.challenge-payout",
-  "job.challenge-announcement", "job.achievements", "job.progression",
+  "job.challenge-announcement", "job.achievements", "job.progression", "job.bot-event",
 ] as const;
 export type Component = (typeof COMPONENTS)[number];
 export type HealthState = "healthy" | "degraded" | "unhealthy" | "unknown";

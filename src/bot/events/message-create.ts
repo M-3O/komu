@@ -1,3 +1,5 @@
+import { dispatchBotWork } from "../work-tracker";
+
 import { ChannelType, Events } from "discord.js";
 import type { Client, Message } from "discord.js";
 
@@ -18,7 +20,7 @@ const log = createLogger("xp");
  */
 export function registerMessageCreate(client: Client): void {
   client.on(Events.MessageCreate, (message: Message) => {
-    void onMessage(message, client);
+    dispatchBotWork(() => onMessage(message, client));
   });
 }
 

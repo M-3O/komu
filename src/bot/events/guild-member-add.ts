@@ -1,3 +1,5 @@
+import { dispatchBotWork } from "../work-tracker";
+
 import { Events } from "discord.js";
 import type { Client, GuildMember } from "discord.js";
 
@@ -17,7 +19,7 @@ const log = createLogger("bot");
  */
 export function registerGuildMemberAdd(client: Client): void {
   client.on(Events.GuildMemberAdd, (member: GuildMember) => {
-    void onMemberJoin(member);
+    dispatchBotWork(() => onMemberJoin(member));
   });
 }
 

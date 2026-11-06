@@ -20,6 +20,7 @@ import "../src/bot/events/message-create";
 import "../src/bot/events/message-reaction-add";
 import "../src/bot/events/ready";
 import "../src/bot/health-server";
+import "../src/bot/runtime";
 
 const commandNames = COMMANDS.map((command) => command.definition.name);
 
