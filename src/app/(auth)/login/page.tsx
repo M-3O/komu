@@ -18,6 +18,9 @@ export const metadata = {
 
 /** Human-readable explanations for the codes the callback can redirect with. */
 const ERROR_MESSAGES: Record<string, string> = {
+  access_denied: "Access to this dashboard is restricted.",
+  access_unavailable:
+    "Your access could not be verified. Please try again later.",
   oauth_failed: "Discord sign-in was cancelled. Please try again.",
   state_mismatch:
     "That sign-in link expired or could not be verified. Please try again.",

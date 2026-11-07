@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { manageableGuilds } from "./discord-permissions";
 import { fetchDiscordGuilds } from "./discord-oauth";
+import { authorizeInstallationOwner } from "./installation-owner";
 import { getSession, requireSession, LOGIN_PATH } from "./session";
 import { decryptToken } from "./token-crypto";
 
@@ -41,7 +42,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     },
   });
 
-  if (!account) return null;
+  if (!account || account.userId !== session.userId) return null;
 
   // Signing out bumps the user's version, which invalidates every token
   // issued before that moment. The check lives here because this is the one
@@ -59,12 +60,17 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   };
 }
 
-/** The signed-in user, or a redirect to the login page. */
+/** The signed-in installation owner, or a generic login/access redirect. */
 export async function requireCurrentUser(
   returnTo?: string,
 ): Promise<CurrentUser> {
   await requireSession(returnTo);
-  const user = await getCurrentUser();
+  let user: CurrentUser | null;
+  try {
+    user = await getCurrentUser();
+  } catch {
+    redirect(`${LOGIN_PATH}?error=access_unavailable`);
+  }
 
   if (!user) {
     // The cookie is valid but the account is gone or its session version was
@@ -72,6 +78,9 @@ export async function requireCurrentUser(
     // an error boundary.
     redirect(LOGIN_PATH);
   }
+
+  const access = await authorizeInstallationOwner(user);
+  if (!access.ok) redirect(`${LOGIN_PATH}?error=${access.reason}`);
 
   return user;
 }
