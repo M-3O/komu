@@ -208,6 +208,8 @@ export async function getAnalyticsTrend(
   range: AnalyticsRange,
   now?: Date,
 ): Promise<AnalyticsTrend[]> {
+  await requireCurrentUser();
+
   // Same reason as getAnalytics: a default parameter would evaluate the clock
   // read at the call site, before the io() guard runs.
   await io();

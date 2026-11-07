@@ -9,8 +9,10 @@ import {
   fetchDiscordUser,
 } from "@/lib/auth/discord-oauth";
 import { manageableGuilds } from "@/lib/auth/discord-permissions";
+import { authorizeInstallationOwner } from "@/lib/auth/installation-owner";
 import {
   createSession,
+  destroySession,
   OAUTH_STATE_COOKIE_NAME,
 } from "@/lib/auth/session";
 import { encryptToken } from "@/lib/auth/token-crypto";
@@ -50,9 +52,7 @@ export async function GET(request: Request) {
 
   // The visitor declined, or Discord reported a problem.
   if (oauthError || !code || !state) {
-    log.warn("Discord login did not complete", {
-      error: oauthError ?? "missing code or state",
-    });
+    log.warn("Discord login did not complete");
     await clearStateCookie();
     redirect("/login?error=oauth_failed");
   }
@@ -74,62 +74,47 @@ export async function GET(request: Request) {
 
   try {
     const token = await exchangeCodeForToken(code, storedState.codeVerifier);
-    const [discordUser, guilds] = await Promise.all([
-      fetchDiscordUser(token.access_token),
-      fetchDiscordGuilds(token.access_token),
-    ]);
+    const discordUser = await fetchDiscordUser(token.access_token);
+    const access = await authorizeInstallationOwner({ discordId: discordUser.id });
 
-    const adminGuilds = manageableGuilds(guilds);
-
-    const account = await upsertDiscordAccount({
-      discordId: discordUser.id,
-      username: discordUser.username,
-      avatarHash: discordUser.avatar,
-      // Encrypted before it reaches the row. Doing it here rather than in a
-      // Prisma extension keeps the one write path obvious.
-      accessToken: encryptToken(token.access_token),
-      tokenExpiresAt: token.expires_in
-        ? new Date(Date.now() + token.expires_in * 1000)
-        : null,
-    });
-
-    await createSession({
-      userId: account.userId,
-      discordId: account.discordId,
-      sessionVersion: account.sessionVersion,
-    });
-
-    log.info("Discord login succeeded", {
-      discordId: discordUser.id,
-      adminGuildCount: adminGuilds.length,
-    });
-
-    // V1 manages one server. If none is connected yet, or this person cannot
-    // administer the connected one, send them to setup instead.
-    const guild = await prisma.guild.findFirst({
-      orderBy: { createdAt: "asc" },
-      select: { discordId: true },
-    });
-
-    const canManageConnectedGuild =
-      guild !== null &&
-      adminGuilds.some((candidate) => candidate.id === guild.discordId);
-
-    if (guild && !canManageConnectedGuild) {
-      log.info("Signed-in user cannot manage the connected server", {
-        discordId: discordUser.id,
-      });
-      destination = "/setup";
-    } else if (!guild) {
-      destination = "/setup";
+    if (!access.ok) {
+      // Refuse before storing tokens/accounts or issuing a new session. An old
+      // browser session is cleared too; other sessions are checked on each use.
+      await destroySession();
+      destination = "/login?error=" + access.reason;
     } else {
-      destination = storedState.returnTo ?? "/dashboard";
+      const guilds = await fetchDiscordGuilds(token.access_token);
+      const adminGuilds = manageableGuilds(guilds);
+      const account = await updateDiscordAccount({
+        userId: access.owner.userId,
+        discordId: discordUser.id,
+        username: discordUser.username,
+        avatarHash: discordUser.avatar,
+        accessToken: encryptToken(token.access_token),
+        tokenExpiresAt: token.expires_in
+          ? new Date(Date.now() + token.expires_in * 1000)
+          : null,
+      });
+
+      await createSession({
+        userId: account.userId,
+        discordId: account.discordId,
+        sessionVersion: account.sessionVersion,
+      });
+
+      log.info("Discord login succeeded");
+      const canManageConnectedGuild = adminGuilds.some(
+        (candidate) => candidate.id === access.owner.guildDiscordId,
+      );
+      destination = canManageConnectedGuild
+        ? storedState.returnTo ?? "/dashboard"
+        : "/setup";
     }
-  } catch (error) {
-    log.error("Discord callback failed", {
-      reason: error instanceof Error ? error.message : "unknown",
-    });
-    redirect("/login?error=login_failed");
+  } catch {
+    // Authentication failures must not log raw provider/Prisma errors.
+    log.error("Discord callback failed", { code: "OAUTH_CALLBACK_FAILED" });
+    await destroySession();
+    destination = "/login?error=login_failed";
   }
 
   redirect(destination);
@@ -210,7 +195,8 @@ function statesMatch(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-async function upsertDiscordAccount(input: {
+async function updateDiscordAccount(input: {
+  userId: string;
   discordId: string;
   username: string;
   avatarHash: string | null;
@@ -229,15 +215,11 @@ async function upsertDiscordAccount(input: {
     tokenExpiresAt: input.tokenExpiresAt,
   };
 
-  const account = await prisma.discordAccount.upsert({
-    where: { discordId: input.discordId },
-    // A returning user keeps their existing dashboard account.
-    update: details,
-    create: {
-      ...details,
-      discordId: input.discordId,
-      user: { create: {} },
-    },
+  // Private development mode only accepts the existing owner account. Never
+  // recreate a missing account or silently rebind it to another dashboard user.
+  const account = await prisma.discordAccount.update({
+    where: { discordId: input.discordId, userId: input.userId },
+    data: details,
     // The version is what makes sign-out revoke older tokens, so the new
     // session must be signed with the row's current value.
     include: { user: { select: { sessionVersion: true } } },
