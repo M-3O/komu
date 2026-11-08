@@ -1,5 +1,3 @@
-import "server-only";
-
 /**
  * A deadline for outbound requests.
  *

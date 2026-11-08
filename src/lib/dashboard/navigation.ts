@@ -45,6 +45,7 @@ export const DASHBOARD_NAV: NavSection[] = [
     items: [
       { href: "/dashboard/moderation", label: "Moderation" },
       { href: "/dashboard/analytics", label: "Analytics" },
+      { href: "/dashboard/monitoring", label: "Monitoring" },
     ],
   },
 ];
