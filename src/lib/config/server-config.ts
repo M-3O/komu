@@ -66,6 +66,24 @@ const schema = z.object({
   YOUTUBE_API_KEY: z.string().optional(),
   KICK_CLIENT_ID: z.string().optional(),
   KICK_CLIENT_SECRET: z.string().optional(),
+
+  // TikTok account linking is deliberately disabled unless all four values
+  // are explicitly enabled. The redirect URI is not derived from the public
+  // app URL because TikTok web callbacks must be registered as a static HTTPS
+  // URI in the developer portal.
+  TIKTOK_CLIENT_KEY: z.string().optional(),
+  TIKTOK_CLIENT_SECRET: z.string().optional(),
+  TIKTOK_REDIRECT_URI: z.string().optional(),
+  // Separate least-privilege secret for the prepared revocation maintenance
+  // endpoint. It is intentionally optional while TikTok remains disabled.
+  TIKTOK_MAINTENANCE_SECRET: z.string().optional(),
+  TIKTOK_TOKEN_ENCRYPTION_KEYS: z.string().optional(),
+  TIKTOK_TOKEN_ENCRYPTION_ACTIVE_KEY: z.string().optional(),
+  // Server-trusted origin for post-OAuth redirects. Never use the request
+  // Host header for this value.
+  KOMU_TRUSTED_APP_ORIGIN: z.string().optional(),
+  TIKTOK_OAUTH_APPROVED: z.string().optional(),
+  TIKTOK_ACCOUNT_LINKING_ENABLED: z.string().optional(),
 });
 
 export type ServerConfig = z.infer<typeof schema>;

@@ -11,7 +11,10 @@ import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { availableProviders } from "@/lib/streams/registry";
 import { getLiveStatuses } from "@/lib/streams/get-live-status";
+import { getTikTokIntegrationStatus } from "@/lib/tiktok/config";
+import { getTikTokConnectionForGuild } from "@/lib/tiktok/connection-store";
 import { ChannelManager } from "./ChannelManager";
+import { TikTokConnectionCard } from "./TikTokConnectionCard";
 
 export const metadata = { title: "Channels" };
 
@@ -81,6 +84,18 @@ async function ChannelsWorkspace() {
     }),
   ]);
 
+  // Keep the new table out of the request path while the integration is
+  // hard-disabled. This lets existing deployments render safely before the
+  // additive migration is applied.
+  let tikTokConnection = null;
+  try {
+    if (getTikTokIntegrationStatus().enabled) {
+      tikTokConnection = await getTikTokConnectionForGuild(guild.id);
+    }
+  } catch {
+    tikTokConnection = null;
+  }
+
   const providers = availableProviders();
   const live = statuses.filter((status) => status.stream).length;
   const routeIds = alertRoutes.map((route) => route.streamingAccountId);
@@ -140,6 +155,8 @@ async function ChannelsWorkspace() {
         availableProviders={providers}
         alertRoutes={routeIds}
       />
+
+      <TikTokConnectionCard connection={tikTokConnection} />
 
       <p className="flex items-start gap-2 text-[11px] leading-5 text-[color:var(--color-komu-muted)]">
         <Radio className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-300" />
