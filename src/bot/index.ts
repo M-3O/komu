@@ -13,6 +13,7 @@
 import { Client } from "discord.js";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
+import { publishWorkerHeartbeat, workerMonitoringEnabled } from "@/lib/monitoring/worker-heartbeat";
 import { getBotToken, INTENTS, PARTIALS } from "./config";
 import { registerGuildEvents } from "./events/error-handlers";
 import { registerGuildMemberAdd } from "./events/guild-member-add";
@@ -29,6 +30,7 @@ async function main() {
     login: () => client.login(getBotToken()),
     disconnectDatabase: () => prisma.$disconnect(),
     monitoringSecret: process.env.BOT_MONITORING_SECRET,
+    publishHeartbeat: workerMonitoringEnabled() ? publishWorkerHeartbeat : undefined,
     configure: () => {
       registerReady(client);
       registerGuildEvents(client);

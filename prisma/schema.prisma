@@ -844,3 +844,11 @@ model ModerationActionRecord {
   @@index([targetMemberId, type])
   @@map("moderation_actions")
 }
+
+model WorkerHeartbeat {
+  id         Int      @id
+  ready      Boolean
+  lastSeenAt DateTime @db.Timestamptz(3)
+
+  @@map("worker_heartbeat")
+}

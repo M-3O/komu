@@ -54,8 +54,11 @@ export function MonitoringBoard({ initial }: { initial: DashboardSnapshot }) {
   if (status === "denied") return <div className="komu-panel p-8" role="alert"><h1 className="text-xl font-semibold">Access to monitoring is restricted.</h1><a href="/login" className="komu-btn komu-btn-secondary mt-5">Sign in again</a></div>;
   const now = snapshot.generatedAt + elapsed;
   const view = dashboardView(snapshot, now, readFailed);
+  const heartbeatAt = snapshot.worker?.lastSeenAt ?? null;
   const cards = [
-    { title: "Discord gateway", icon: WifiOff, state: "unknown" as const, scope: "Discord worker", detail: "No verified worker connection." },
+    { title: "Discord gateway", icon: WifiOff, state: view.workerState, scope: "Discord worker",
+      detail: <>{view.workerState === "healthy" ? "Gateway ready." : view.workerState === "degraded" ? "Gateway not ready." : "No recent gateway status."}
+        {heartbeatAt !== null && <> Last heartbeat <Time value={heartbeatAt} now={now} />.</>}</> },
     { title: "Database operations", icon: Database, state: view.database, scope: "Dashboard process", detail: "Stream database operations observed here." },
     { title: "Progression", icon: Workflow, state: "unknown" as const, scope: "Discord worker", detail: "Message and activity processing not observed." },
     { title: "Challenge payouts", icon: Coins, state: "unknown" as const, scope: "Discord worker", detail: "Reward transactions not observed here." },
@@ -72,7 +75,7 @@ export function MonitoringBoard({ initial }: { initial: DashboardSnapshot }) {
         <div className="flex items-start gap-4"><IconTile icon={Activity} tone={tones[view.state]} className="h-12 w-12" /><div>
           <div className="mb-2 flex flex-wrap items-center gap-2"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">Observed health</p><StateBadge state={view.state} /></div>
           <h2 className="text-xl font-semibold tracking-tight">Partial visibility. No assumed health.</h2>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">This snapshot covers the dashboard process serving this request. The separate Discord worker is not connected to monitoring.</p>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">Local dashboard observations and the Discord worker’s latest gateway heartbeat.</p>
         </div></div>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-5 rounded-xl border border-white/5 bg-black/10 p-4">{counts.map(({ state, count }) => <div key={state}><p className="font-display text-2xl font-semibold tabular-nums">{count}</p><p className="mt-1 text-[11px] text-slate-400">{names[state]}</p></div>)}</div>
       </div>

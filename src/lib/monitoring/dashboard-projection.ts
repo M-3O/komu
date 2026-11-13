@@ -20,7 +20,7 @@ function observation(input: Record<string, unknown>, now: number, freshFor: numb
     lastError: isErrorCode(input.lastError) ? input.lastError : null, consecutiveFailures: count(input.consecutiveFailures) };
 }
 /** Fixed fields/keys only. Raw snapshots, arbitrary poller keys and errors never escape. */
-export function projectDashboardSnapshot(health: unknown, timers: unknown, now: number): DashboardSnapshot {
+export function projectDashboardSnapshot(health: unknown, timers: unknown, now: number, worker: DashboardSnapshot["worker"] = null): DashboardSnapshot {
   const healthAvailable = Array.isArray(health), timersAvailable = Array.isArray(timers);
   const components = LOCAL_COMPONENTS.map(component => {
     const raw = record(healthAvailable ? health.find(v => record(v).component === component) : null);
@@ -45,5 +45,5 @@ export function projectDashboardSnapshot(health: unknown, timers: unknown, now: 
       reason: !timersAvailable ? "SOURCE_UNAVAILABLE" as const : !registered ? "NOT_REGISTERED" as const : entry.reason,
       checked: usableResult ? count(result.checked) : null, alerted: usableResult ? count(result.alerted) : null, skipped: usableResult ? count(result.skipped) : null, unchanged: usableResult ? count(result.unchanged) : null, failed: usableResult ? failed : null };
   });
-  return { version: 1, generatedAt: now, scope: "dashboard-process", worker: { state: "unknown", reason: "WORKER_NOT_CONNECTED" }, components, pollers };
+  return { version: 2, generatedAt: now, scope: "dashboard-process", worker, components, pollers };
 }

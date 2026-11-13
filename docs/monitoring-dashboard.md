@@ -1,33 +1,23 @@
 # Phase 1C: owner-only monitoring dashboard
 
-Status: safe local visibility implemented; worker communication BLOCKED/unverified.
-No deployment, database connection, environment change or worker-branch change
-has been performed. The owner-only pre-deployment verification remains mandatory:
-[owner-only development access](owner-only-development-access.md).
+See [owner-only development access](owner-only-development-access.md) for
+pre-deployment access checks.
 
-## Supported communication versus actual deployment
+## Discord worker heartbeat
 
-The two CranL applications have separate memory and lifecycles. The worker has
-no public address in the approved architecture. No configured private route,
-private DNS, encrypted app-to-app transport or authenticated dashboard-to-worker
-access was supplied or independently verified. No CranL connector was available
-and no production request was made.
+The Discord bot writes its gateway readiness and timestamp to one row in the
+shared database at startup and roughly every minute. The owner-only dashboard
+reads that row during its existing refresh. A heartbeat under three minutes old
+shows Healthy when the gateway is ready and Degraded when it is connecting or
+disconnected. Missing, stale, future-dated and failed reads show Unknown.
+Progression, payouts and challenge announcements remain Unknown on this page.
 
-Official app documentation describes public HTTPS domains, which does not
-establish an allowed private path to this worker:
-https://docs.cranl.com/platform/applications.html
-https://docs.cranl.com/platform/domains-ssl.html
-
-The documented private preview ports and preview tokens apply to Sandboxes,
-not evidence of private networking between these deployed Applications:
-https://docs.cranl.com/sandboxes/preview-urls.html
-
-Consequently there is NO worker fetcher, invented hostname, localhost fallback,
-public exposure, push receiver, cross-app cache or worker coordinator. Worker
-gateway, progression, payout and challenge-announcement health are explicitly
-Unknown / WORKER_NOT_CONNECTED. Observing Discord REST in the dashboard does
-not establish gateway readiness, nor does a dashboard database operation verify
-the worker's database selection or payout availability.
+The heartbeat is off by default. To enable it, apply the
+`20261109120000_worker_heartbeat` migration and set
+`KOMU_WORKER_MONITORING_ENABLED=true` in both applications. Use the same Neon
+database and schema, synchronized clocks and one Discord worker. If two workers
+publish, the dashboard shows the last write. Regular heartbeats may keep Neon
+compute active.
 
 ## Implemented local observations
 
@@ -40,9 +30,9 @@ The page redirects refused requests to generic login errors. Direct GET
 Origin/Sec-Fetch-Site requests are refused before reading observations.
 
 Successful and refused endpoint responses are private/no-store, vary on Cookie,
-set nosniff, expose no CORS grant, and include no identities. No new secrets,
-environment variables, schema objects or Prisma clients are required. Existing
-public health and secret-authenticated internal APIs are unchanged.
+set nosniff, expose no CORS grant, and include no identities. The heartbeat uses
+the existing Prisma client and owner authorization. Existing public health and
+secret-authenticated internal APIs are unchanged.
 
 The existing Phase 1A registry provides ten allowlisted local observations:
 Discord REST reads/writes, five stream database operations and three streaming
@@ -103,27 +93,8 @@ the initial server-rendered snapshot. One request at a time, eight-second
 client deadline, AbortController cleanup, ten-second manual minimum spacing,
 60/120/240/300-second failure backoff capped at five minutes. Manual clicks
 cannot bypass backoff; no catch-up bursts. Hidden/offline tabs pause requests;
-returning resumes subject to the same limits. Authorization is rechecked on
-EVERY request and is not cached. The existing authentication database reads
-are the only database work added by refresh; no scheduled database heartbeat,
-provider poll, Discord message or business retry is triggered.
-
-## Remaining release gate and future coordinator
-
-Before cross-app work, obtain provider confirmation of a supported private,
-encrypted path for these exact applications, with authentication and no public
-worker ingress. Verify it from the dashboard container only under separate
-approval: unauthenticated rejection, correctly authenticated safe snapshot,
-header forwarding and no caching. Confirm all source/version/port boundaries.
-Do not use a CranL account/API key in browser code or a Sandbox preview route
-as an invented production app connection.
-
-Only after that verification, design a pinned server-side transport with bounded
-requests/deadlines, no redirects, strict worker snapshot validation, freshness
-checks and fail-closed server-only secrets. Do not expose the existing worker
-endpoint publicly as a workaround. If CranL cannot support the required path,
-keep these worker cards Unknown and review architecture separately. No database
-heartbeat/table, third app, Redis, queue or paid monitoring service is introduced.
+returning resumes subject to the same limits. Each request checks authorization.
+Enabled refreshes add one heartbeat lookup after authorization.
 
 ## Verification
 
