@@ -81,6 +81,10 @@ export function encryptToken(plaintext: string): string {
  * user out; the next login rewrites the row encrypted.
  */
 export function decryptToken(stored: string): string | null {
+  // A provider-specific ciphertext must never be treated as a legacy Discord
+  // plaintext value by this Discord-only helper.
+  if (stored.startsWith("tiktok:")) return null;
+
   if (!stored.startsWith(`${VERSION}:`)) return stored;
 
   const parts = stored.split(":");

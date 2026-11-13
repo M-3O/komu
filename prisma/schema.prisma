@@ -163,6 +163,13 @@ model User {
   /// multi-server support; V1 resolves to a single guild.
   guilds Guild[]
 
+  /// Audit link for the dashboard user who created a TikTok connection. The
+  /// guild remains the authorization owner; this relation is not used as an
+  /// access-control shortcut.
+  tiktokConnectionsCreated TikTokConnection[] @relation("TikTokConnectionCreatedBy")
+
+  tiktokOAuthAttempts TikTokOAuthAttempt[]
+
   @@map("users")
 }
 
@@ -237,6 +244,9 @@ model Guild {
   challenges       Challenge[]
   achievements     Achievement[]
   moderationRules  ModerationRule[]
+  tiktokConnections   TikTokConnection[]
+  tiktokRevocations   TikTokRevocation[]
+  tiktokOAuthAttempts TikTokOAuthAttempt[]
 
   @@map("guilds")
 }
@@ -344,6 +354,134 @@ model StreamingAccount {
   @@unique([guildId, provider, providerUserId])
   @@index([guildId, provider])
   @@map("streaming_accounts")
+}
+
+/// An official TikTok Login Kit connection. This is deliberately separate
+/// from StreamingAccount because TikTok LIVE is not an available capability.
+model TikTokConnection {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  /// The owner who completed the link. Guild ownership remains the primary
+  /// authorization boundary; this field is audit metadata only.
+  connectedByUserId String?
+  connectedByUser   User?   @relation("TikTokConnectionCreatedBy", fields: [connectedByUserId], references: [id], onDelete: SetNull)
+
+  /// TikTok's app-scoped stable identity. Display metadata is intentionally
+  /// limited to fields covered by user.info.basic.
+  openId      String
+  displayName String?
+  avatarUrl   String?
+
+  /// These values must use the provider-specific encrypted format written by
+  /// `lib/auth/provider-token-crypto.ts`; null means disconnected or pending
+  /// reauthorization.
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+
+  /// Provider response, not the requested set. Partial optional consent is
+  /// preserved so capability checks can fail closed.
+  grantedScopes String[] @default([])
+
+  /// Explicit opt-in for a future official video.list consumer. TikTok LIVE
+  /// is not represented here and remains unavailable.
+  videoNotificationsEnabled Boolean @default(false)
+
+  /// Monotonic CAS version for refresh-token rotation.
+  credentialsVersion   Int       @default(1)
+  /// Distributed refresh lease. A stale lease is treated as an uncertain
+  /// external outcome and requires reauthorization before another refresh.
+  refreshLeaseToken    String?
+  refreshLeaseUntil    DateTime?
+  lastRefreshAttemptAt DateTime?
+
+  /// Short lease used to serialize disconnect/relink with refresh. Network
+  /// calls happen outside the database transaction; the lease is CAS-bound to
+  /// credentialsVersion and expires conservatively after a process crash.
+  disconnectLeaseToken String?
+  disconnectLeaseUntil DateTime?
+
+  /// Set when revocation, invalid_grant, an uncertain refresh, or insufficient
+  /// scope means KOMU can no longer prove that its credentials are usable.
+  reauthorizationRequiredAt DateTime?
+  disconnectedAt            DateTime?
+
+  revocations TikTokRevocation[]
+
+  /// Initial release allows exactly one connection row per Discord guild.
+  /// Older credentials that still need revocation live in TikTokRevocation.
+  @@unique([guildId])
+  @@index([guildId, disconnectedAt])
+  @@index([refreshLeaseUntil])
+  @@index([disconnectLeaseUntil])
+  @@map("tiktok_connections")
+}
+
+/// Minimum encrypted record needed to retry revocation after a disconnect or
+/// relink raced with a provider request. This table is deliberately separate
+/// from TikTokConnection so one active guild connection can be enforced while
+/// old credentials remain available for bounded revocation retry.
+model TikTokRevocation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guildId String
+  // Keep queued encrypted credentials until revocation succeeds or the
+  // seven-day retention policy expires. Destructive guild deletion must not
+  // cascade through a pending revocation record.
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Restrict)
+
+  /// The connection id is an audit identity only; sourceCredentialsVersion
+  /// prevents a delayed operation from affecting a newer link.
+  connectionId             String
+  // Retain the source row while queued credentials still require revocation.
+  connection               TikTokConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  sourceCredentialsVersion Int
+  accessToken              String
+  retentionUntil           DateTime
+
+  /// Distributed maintenance lease. Expired leases are reclaimable.
+  leaseToken        String?
+  leaseUntil        DateTime?
+  lastAttemptAt     DateTime?
+  lastErrorCategory String?   @db.VarChar(64)
+
+  @@unique([connectionId, sourceCredentialsVersion])
+  @@index([retentionUntil])
+  @@index([leaseUntil])
+  @@map("tiktok_revocations")
+}
+
+/// Short-lived, single-use OAuth state. Only the SHA-256 hash of the opaque
+/// browser state is stored; the raw value exists only in the authorization
+/// request and callback URL.
+model TikTokOAuthAttempt {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+
+  stateHash String @unique @db.VarChar(64)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  requestedScopes String[] @default([])
+  redirectUri     String   @db.VarChar(512)
+
+  @@index([expiresAt])
+  @@index([userId, guildId, expiresAt])
+  @@map("tiktok_oauth_attempts")
 }
 
 /// One live session. A row is created when the creator goes live and closed

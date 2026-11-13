@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:payout:postgres": "vitest run --config vitest.payout.config.ts",
+    "test:tiktok:postgres": "vitest run --config vitest.tiktok-postgres.config.ts",
     "diagnose:neon": "tsx scripts/diagnose-neon.ts",
     "test:watch": "vitest",
     "bot": "tsx src/bot/bootstrap.ts",
