@@ -16,7 +16,7 @@ describe("monitoring page presentation without a live app", () => {
   it("renders recent local evidence alongside unavailable worker coverage", () => {
     const snapshot = projectDashboardSnapshot([{ component: "discord.read", state: "healthy", stale: false, lastObservedAt: now, lastSuccessAt: now }], [], now);
     const html = renderToStaticMarkup(createElement(MonitoringBoard, { initial: snapshot }));
-    expect(html).toContain("Healthy"); expect(html).toContain("Unknown"); expect(html).toContain("No verified worker connection.");
+    expect(html).toContain("Healthy"); expect(html).toContain("Unknown"); expect(html).toContain("No recent gateway status.");
   });
   it("never renders stale incidents as current health and retains their safe history", () => {
     const snapshot = projectDashboardSnapshot([{ component: "discord.read", state: "unhealthy", stale: true, lastObservedAt: now - 400_000, lastFailureAt: now - 400_000, lastError: "DISCORD_AUTH_FAILED", consecutiveFailures: 3 }], [], now);

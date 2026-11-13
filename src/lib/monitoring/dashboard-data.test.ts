@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ session: vi.fn(), account: vi.fn(), guilds: vi.fn(), observations: vi.fn(), pollers: vi.fn() }));
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ session: vi.fn(), account: vi.fn(), guilds: vi.fn(), observations: vi.fn(), pollers: vi.fn(), heartbeat: vi.fn() }));
 vi.mock("@/lib/auth/session", () => ({ getSession: mocks.session, requireSession: vi.fn(), LOGIN_PATH: "/login" }));
-vi.mock("@/lib/db", () => ({ prisma: { discordAccount: { findUnique: mocks.account }, guild: { findMany: mocks.guilds } } }));
+vi.mock("@/lib/db", () => ({ prisma: { discordAccount: { findUnique: mocks.account }, guild: { findMany: mocks.guilds }, workerHeartbeat: { findUnique: mocks.heartbeat } } }));
 vi.mock("@/lib/streams/poller-runtime", () => ({ getStreamPollerStatus: mocks.pollers }));
 vi.mock("./health", () => ({ health: { snapshot: mocks.observations } }));
 import { getMonitoringDashboard } from "./dashboard-data";
@@ -9,22 +9,36 @@ import { GET } from "@/app/api/monitoring/route";
 const request = (headers: Record<string, string> = {}) => new Request("https://komu.test/api/monitoring", { headers });
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv("KOMU_WORKER_MONITORING_ENABLED", "");
   mocks.session.mockResolvedValue({ userId: "owner-user", discordId: "owner-discord", sessionVersion: 1 });
   mocks.account.mockResolvedValue({ userId: "owner-user", discordId: "owner-discord", username: "PRIVATE_NAME", avatarHash: null, user: { sessionVersion: 1 } });
   mocks.guilds.mockResolvedValue([{ id: "PRIVATE_GUILD", discordId: "PRIVATE_GUILD", ownerId: "owner-user", owner: { id: "owner-user", discordAccount: { userId: "owner-user", discordId: "owner-discord" } } }]);
   mocks.observations.mockReturnValue([]); mocks.pollers.mockReturnValue([]);
 });
+afterEach(() => vi.unstubAllEnvs());
 describe("monitoring data and direct HTTP owner authorization", () => {
   it("serves only projected in-memory data to the verified owner without identities", async () => {
     const response = await GET(request()); expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store"); expect(response.headers.get("vary")).toBe("Cookie");
     const body = await response.text(); expect(body).not.toMatch(/owner-user|owner-discord|PRIVATE_GUILD|PRIVATE_NAME/);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(mocks.heartbeat).not.toHaveBeenCalled();
+  });
+  it("returns the latest heartbeat to the owner and treats a failed heartbeat read as unavailable", async () => {
+    vi.stubEnv("KOMU_WORKER_MONITORING_ENABLED", "true");
+    const lastSeenAt = new Date();
+    mocks.heartbeat.mockResolvedValueOnce({ ready: true, lastSeenAt }).mockRejectedValueOnce(Error("PRIVATE_HEARTBEAT"));
+    expect(await (await GET(request())).json()).toMatchObject({ worker: { ready: true, lastSeenAt: lastSeenAt.getTime() } });
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ worker: null });
   });
   it("rejects direct anonymous API calls without redirects or observations", async () => {
+    vi.stubEnv("KOMU_WORKER_MONITORING_ENABLED", "true");
     mocks.session.mockResolvedValue(null);
     const r = await GET(request()); expect(r.status).toBe(401); expect(r.headers.get("location")).toBeNull();
     expect(mocks.observations).not.toHaveBeenCalled(); expect(mocks.pollers).not.toHaveBeenCalled();
+    expect(mocks.heartbeat).not.toHaveBeenCalled();
   });
   it.each(["administrator", "other-guild-owner"])("rejects existing unauthorized %s sessions at both boundaries", async discordId => {
     mocks.session.mockResolvedValue({ userId: "other-user", discordId, sessionVersion: 1 });

@@ -7,9 +7,11 @@ export const POLLER_KEYS = ["all", "fast", "youtube"] as const;
 export const REFRESH_MS = 30_000;
 export const SNAPSHOT_FRESH_MS = 90_000;
 export const OPERATION_FRESH_MS = 300_000;
+export const WORKER_HEARTBEAT_FRESH_MS = 180_000;
 export const STATES = ["healthy", "degraded", "unhealthy", "unknown"] as const;
-export const REASONS = ["OBSERVED", "STALE", "NOT_OBSERVED", "SOURCE_UNAVAILABLE", "NOT_REGISTERED", "WORKER_NOT_CONNECTED"] as const;
-const stamp = z.number().int().nonnegative().max(8_640_000_000_000_000).nullable();
+export const REASONS = ["OBSERVED", "STALE", "NOT_OBSERVED", "SOURCE_UNAVAILABLE", "NOT_REGISTERED"] as const;
+const timestamp = z.number().int().nonnegative().max(8_640_000_000_000_000);
+const stamp = timestamp.nullable();
 const count = z.number().int().min(0).max(1_000_000);
 const observation = z.object({
   state: z.enum(STATES), stale: z.boolean(), reason: z.enum(REASONS),
@@ -17,9 +19,9 @@ const observation = z.object({
   lastError: z.enum(ERROR_CODES).nullable(), consecutiveFailures: count,
 }).strict();
 export const snapshotSchema = z.object({
-  version: z.literal(1), generatedAt: z.number().int().nonnegative().max(8_640_000_000_000_000),
+  version: z.literal(2), generatedAt: timestamp,
   scope: z.literal("dashboard-process"),
-  worker: z.object({ state: z.literal("unknown"), reason: z.literal("WORKER_NOT_CONNECTED") }).strict(),
+  worker: z.object({ ready: z.boolean(), lastSeenAt: timestamp }).strict().nullable(),
   components: z.array(observation.extend({ component: z.enum(LOCAL_COMPONENTS) }).strict()).length(LOCAL_COMPONENTS.length),
   pollers: z.array(observation.extend({
     key: z.enum(POLLER_KEYS), registered: z.boolean(), intervalMs: z.number().int().min(15_000).max(86_400_000).nullable(),
@@ -56,5 +58,9 @@ export function dashboardView(snapshot: DashboardSnapshot, now: number, unavaila
   const pollers = snapshot.pollers.map(p => age(p, pollerFreshness(p.intervalMs)));
   const database = aggregate(components.filter(c => c.component.startsWith("database.")).map(c => c.state));
   const polling = aggregate(pollers.filter(p => p.registered).map(p => p.state));
-  return { components, pollers, database, polling, state: aggregate([database, polling, "unknown"]), expired };
+  const worker = snapshot.worker;
+  const workerState: HealthState = expired || !worker || worker.lastSeenAt > snapshot.generatedAt ||
+    now - worker.lastSeenAt >= WORKER_HEARTBEAT_FRESH_MS
+    ? "unknown" : worker.ready ? "healthy" : "degraded";
+  return { components, pollers, database, polling, workerState, state: aggregate([database, polling, workerState, "unknown"]), expired };
 }

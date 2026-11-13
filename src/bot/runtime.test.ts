@@ -24,6 +24,21 @@ function setup() {
 }
 
 describe("injectable bot runtime (no Discord login or database)", () => {
+  it("continues after a heartbeat failure, reports readiness, and stops publishing on shutdown", async () => {
+    vi.useFakeTimers();
+    const fake = setup();
+    const publishHeartbeat = vi.fn<(ready: boolean) => Promise<void>>().mockRejectedValueOnce(Error("offline"));
+    publishHeartbeat.mockResolvedValue(undefined);
+    const runtime = await startBotRuntime({ ...fake.options, publishHeartbeat });
+    expect(publishHeartbeat).toHaveBeenCalledExactlyOnceWith(false);
+    expect(fake.login).toHaveBeenCalledTimes(1);
+    fake.connect();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(publishHeartbeat).toHaveBeenLastCalledWith(true);
+    await runtime.shutdown.request("SIGTERM");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(publishHeartbeat).toHaveBeenCalledTimes(2);
+  });
   it("does not infer readiness from login resolving and keeps quiet connected bots healthy", async () => {
     const fake = setup(), runtime = await startBotRuntime(fake.options);
     expect(fake.healthOptions().isReady()).toBe(false); expect(fake.login).toHaveBeenCalledTimes(1);

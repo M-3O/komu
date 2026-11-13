@@ -6,6 +6,7 @@ import { health } from "./health";
 import { getStreamPollerStatus } from "@/lib/streams/poller-runtime";
 import { projectDashboardSnapshot } from "./dashboard-projection";
 import type { DashboardSnapshot } from "./dashboard-model";
+import { readWorkerHeartbeat } from "./worker-heartbeat";
 
 export type MonitoringRead = { ok: true; snapshot: DashboardSnapshot } | { ok: false; status: 401 | 403 | 503 };
 /** The page and HTTP endpoint share this independently protected data boundary. */
@@ -18,7 +19,8 @@ export async function getMonitoringDashboard(): Promise<MonitoringRead> {
     let observations: unknown = null, pollers: unknown = null;
     try { observations = health.snapshot(); } catch { /* Unknown, never a fake success. */ }
     try { pollers = getStreamPollerStatus(); } catch { /* Other source can still be shown. */ }
-    return { ok: true, snapshot: projectDashboardSnapshot(observations, pollers, Date.now()) };
+    const worker = await readWorkerHeartbeat();
+    return { ok: true, snapshot: projectDashboardSnapshot(observations, pollers, Date.now(), worker) };
   } catch {
     return { ok: false, status: 503 };
   }

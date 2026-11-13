@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { projectDashboardSnapshot } from "./dashboard-projection";
-import { aggregate, dashboardView, initialSnapshotAge, LOCAL_COMPONENTS, snapshotSchema, SNAPSHOT_FRESH_MS } from "./dashboard-model";
+import { aggregate, dashboardView, initialSnapshotAge, LOCAL_COMPONENTS, snapshotSchema, SNAPSHOT_FRESH_MS, WORKER_HEARTBEAT_FRESH_MS } from "./dashboard-model";
 
 const now = 10_000_000;
 function entry(component = "discord.read", values: object = {}) {
@@ -15,8 +15,20 @@ describe("safe, process-scoped monitoring projection", () => {
     const s = projectDashboardSnapshot(LOCAL_COMPONENTS.map(c => entry(c)), [timer()], now);
     expect(snapshotSchema.safeParse(s).success).toBe(true);
     expect(s.components).toHaveLength(10); expect(s.pollers).toHaveLength(3);
-    expect(s.worker).toEqual({ state: "unknown", reason: "WORKER_NOT_CONNECTED" });
+    expect(s.worker).toBeNull();
     expect(dashboardView(s, now).database).toBe("healthy"); expect(dashboardView(s, now).state).toBe("unknown");
+  });
+  it("uses recent gateway readiness and expires it independently of the dashboard snapshot", () => {
+    const lastSeenAt = now - WORKER_HEARTBEAT_FRESH_MS + 1;
+    const ready = projectDashboardSnapshot([], [], now, { ready: true, lastSeenAt });
+    const connecting = projectDashboardSnapshot([], [], now, { ready: false, lastSeenAt });
+    const future = projectDashboardSnapshot([], [], now, { ready: true, lastSeenAt: now + 1 });
+    expect(snapshotSchema.safeParse(ready).success).toBe(true);
+    expect(dashboardView(ready, now).workerState).toBe("healthy");
+    expect(dashboardView(connecting, now).workerState).toBe("degraded");
+    expect(dashboardView(ready, now + 1).workerState).toBe("unknown");
+    expect(dashboardView(future, now + 1).workerState).toBe("unknown");
+    expect(dashboardView(ready, now, true).workerState).toBe("unknown");
   });
   it("never serializes raw metadata, arbitrary keys, errors or worker observations", () => {
     const s = projectDashboardSnapshot([entry("discord.read", { token: "PRIVATE_CANARY", guildId: "PRIVATE_CANARY", lastError: "PRIVATE_CANARY", stack: "PRIVATE_CANARY" }), entry("job.challenge-payout")],
