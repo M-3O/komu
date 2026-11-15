@@ -93,7 +93,9 @@ export async function recordStreamAttendance(
   // Catching Prisma's unique-violation error would work too, but it logs a
   // prisma:error for every repeat reaction, and repeats are the normal case
   // here rather than a failure.
-  const inserted = await prisma.$transaction(async (tx) => {
+  const xp = await prisma.$transaction(async (tx) => {
+    // Match the lock order used by other XP writers.
+    await tx.$queryRaw`SELECT id FROM guild_members WHERE id = ${member.id} FOR UPDATE`;
     const created = await tx.streamAttendance.createMany({
       data: {
         streamId: stream.id,
@@ -103,17 +105,21 @@ export async function recordStreamAttendance(
       skipDuplicates: true,
     });
 
-    if (created.count === 0) return false;
+    if (created.count === 0) return null;
 
+    const attendance = await tx.streamAttendance.findUniqueOrThrow({
+      where: { streamId_memberId: { streamId: stream.id, memberId: member.id } },
+      select: { id: true },
+    });
     await tx.guildMember.update({
       where: { id: member.id },
       data: { streamAttendanceCount: { increment: 1 } },
     });
 
-    return true;
-  });
+    return awardAttendanceXp(tx, attendance.id, stream.guildId, member.id, stream.title);
+  }, { maxWait: 10_000, timeout: 15_000 });
 
-  if (!inserted) {
+  if (!xp) {
     return { recorded: false, reason: "ALREADY_RECORDED" };
   }
 
@@ -126,14 +132,27 @@ export async function recordStreamAttendance(
   // Attendance is worth XP on its own, separate from messages. The daily
   // cap does not apply: the plan treats this as its own source, and a cap
   // sized for messages would silently swallow attendance.
+  return { recorded: true, xp };
+}
+
+export async function awardAttendanceXp(
+  tx: import("@prisma/client").Prisma.TransactionClient,
+  attendanceId: string,
+  guildId: string,
+  memberId: string,
+  title: string,
+  repair = false,
+) {
   const xp = await awardXp({
-    guildId: stream.guildId,
-    memberId: member.id,
+    guildId,
+    memberId,
     amount: ATTENDANCE_XP,
     source: XPSource.STREAM_ATTENDANCE,
-    reason: stream.title ? `Attended: ${stream.title}` : "Stream attendance",
+    attendanceId,
+    reason: repair ? "Verified stream attendance XP correction"
+      : title ? `Attended: ${title}` : "Stream attendance",
     ignoreDailyCap: true,
-  });
-
-  return { recorded: true, xp };
+  }, tx);
+  if (xp.awarded !== ATTENDANCE_XP) throw new Error("Attendance XP was not awarded in full.");
+  return xp;
 }

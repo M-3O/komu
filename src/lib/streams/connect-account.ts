@@ -170,9 +170,21 @@ export async function disconnectStreamingAccount(
     return { ok: false, error: "That channel is not connected." };
   }
 
-  await prisma.streamingAccount.update({
-    where: { id: account.id },
-    data: { disconnectedAt: new Date() },
+  await prisma.$transaction(async (tx) => {
+    await tx.streamingAccount.update({
+      where: { id: account.id },
+      data: { disconnectedAt: new Date() },
+    });
+    await tx.streamAlertDelivery.updateMany({
+      where: { stream: { streamingAccountId: account.id, endedAt: null },
+        status: "PENDING", claim: null },
+      data: { status: "SKIPPED", reason: "DISCONNECTED" },
+    });
+    await tx.streamAlertDelivery.updateMany({
+      where: { stream: { streamingAccountId: account.id, endedAt: null },
+        status: "PENDING", claim: { not: null } },
+      data: { reason: "DISCONNECTED" },
+    });
   });
 
   log.info("Disconnected streaming account", {

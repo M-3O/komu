@@ -101,7 +101,7 @@ async function request(
  * expiry, and honouring it avoids a token that stops working after a Twitch
  * side change.
  */
-async function getAppAccessToken(): Promise<string> {
+export async function getAppAccessToken(): Promise<string> {
   const now = Date.now();
 
   if (cachedToken && cachedToken.expiresAt > now) {

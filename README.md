@@ -127,8 +127,9 @@ API key, not an OAuth client id: channel lookups read public data, so no Google
 account grant is involved and there is no client secret to store. Restrict the
 key to the YouTube Data API so it cannot be used elsewhere.
 
-**Read the quota note below before setting a poll interval.** Checking whether
-a YouTube channel is live costs 101 quota units per poll.
+**Read the quota note below before setting a poll interval.** YouTube discovery
+uses a separate daily search allowance shared across Komu deployments using the
+same project.
 
 ### Kick setup
 
@@ -237,8 +238,16 @@ working without dashboard-only configuration.
   session never produces two alerts no matter how often the poll runs.
 - **A provider outage does not look like an ended stream.** If Twitch cannot
   be reached, the channel is skipped and any open session is left alone.
-- **A failed alert is retried.** The session is marked as announced only
-  after Discord accepts the message.
+- **Discord rate limits get up to two automatic retries** while the same
+  broadcast is live. After fixing permissions or the message configuration,
+  use **Retry** in **Recent live alerts**.
+- **Uncertain delivery can be checked without posting again.** **Check Discord**
+  looks for Komu's delivery reference in the original channel around the send
+  time. A match restores the message link and attendance. Members whose
+  reactions were missed can remove and re-add them. Komu needs access to the
+  channel's message history to do this.
+- **Alerts off still records streams.** Turning alerts back on leaves the
+  current session quiet until an administrator chooses **Send for this stream**.
 - **Offline is tracked.** Sessions get an end time, which is what lets a
   later stream be recognised as new.
 
@@ -781,34 +790,67 @@ measured and found to be zero.
 
 ### YouTube quota: read this before choosing a poll interval
 
-YouTube charges per request out of a daily allowance, and the two calls cost
-very different amounts:
+Google documents 100 `search.list` calls per Pacific day by default, in a
+separate quota bucket from `videos.list`. Komu uses Postgres to share
+`YOUTUBE_DAILY_SEARCH_LIMIT` across all background and dashboard discovery
+checks on the same database. Set the limit at or below the project's actual
+allowance and account for other apps sharing that project.
+[YouTube quota calculator](https://developers.google.com/youtube/data/determine_quota_cost).
 
-| Call | Units |
-| ---- | ----- |
-| `channels.list` (resolve a handle or id) | 1 |
-| `videos.list` (is this broadcast running) | 1 |
-| `search.list` (find the live video) | **100** |
-
-Asking whether a channel is live needs `search.list`, so **every YouTube poll
-costs 101 units**. The default daily allowance is 10,000, which means a
-60-second poll interval exhausts it in **under two hours** and then YouTube
-stops answering for the rest of the day.
-
-On a default project, use **`STREAM_POLL_INTERVAL_SECS=1800`** (thirty
-minutes): 48 polls a day, about **4,850 units**, which leaves half the allowance
-for the dashboard's own status checks (each one also costs 101). The shortest
-safe interval for polling alone is 900 (fifteen minutes), but that uses 9,700
-units and leaves no dashboard headroom. Five minutes costs about 29,000 units a
-day and needs a 100,000-unit quota. A creator watching for the instant a stream
-goes live should use Twitch or Kick instead.
+At `STREAM_POLL_INTERVAL_SECS=1800`, one connected channel uses up to 48
+scheduled searches a day. Increase the interval as you add channels to leave
+headroom for dashboard checks. For a scheduled broadcast, paste its video link
+on the Alerts page. Komu verifies the channel and polls that video ID every
+minute around the start window using `videos.list`. **Check now** verifies an
+already-running broadcast from its video link. Tracking a different link for
+the same channel replaces the one currently tracked.
 
 With `STREAM_POLL_FAST_INTERVAL_SECS=60`, Twitch and Kick alerts do not inherit
 that long interval. Without it, `STREAM_POLL_INTERVAL_SECS` covers every
 provider, so the YouTube-safe interval also slows Twitch and Kick.
 
-A missed poll is not a missed alert: the next successful poll still reports the
-stream as live, so a longer interval delays the alert rather than losing it.
+An untracked broadcast that starts and ends between discovery checks can be
+missed. Use the scheduled link for time-sensitive YouTube broadcasts.
+
+### Twitch and Kick webhooks
+
+Apply the stream alert reliability migration before deploying the web app
+and bot. On the private test deployment set `STREAM_WEBHOOK_BASE_URL` to its
+HTTPS origin. Set `TWITCH_EVENTSUB_SECRET` to a random 32-byte hex string, then
+set `KOMU_TWITCH_WEBHOOK_ENABLED=true`. For Kick, configure the callback
+`/api/webhooks/streams/kick` in the Kick developer portal and set
+`KOMU_KICK_WEBHOOK_ENABLED=true`. Use separate provider applications for
+test and production deployments. Check **Recent live alerts** for webhook
+health. Keep the existing fast poller enabled for fallback and run stream
+maintenance using the in-process timer. For an external scheduler, call the
+same authenticated poll endpoint with `?mode=maintenance` every minute to
+process webhook events, scheduled links, and retries without spending YouTube
+discovery calls. Keep the discovery schedule separate.
+
+### Review older attendance XP
+
+Run `npx tsx scripts/attendance-xp.ts audit --guild <Discord server ID>` to
+list attendance rows without an exact XP ledger link. The audit is read-only.
+Where independent evidence confirms that an award was missed, run
+`npx tsx scripts/attendance-xp.ts repair --guild <ID> --attendance <ID> --verified-missing`.
+The repair records one 25 XP correction and leaves the attendance count intact.
+
+### Private acceptance test
+
+1. Apply the migration to the isolated database and deploy both services.
+   Keep the webhook flags off for this first pass.
+2. Use a test Discord channel and a connected Twitch or Kick account. Remove
+   Komu's permission to post in that channel, then start a real broadcast.
+   Confirm that **Recent live alerts** shows the permission failure.
+3. Restore the permission and select **Retry** while the stream is live.
+   Open the resulting Discord link and react twice using a test member.
+   Confirm one Discord post, one attendance record, and one 25 XP award.
+4. Start another broadcast with alerts off. Confirm the session appears as
+   skipped and the channel stays quiet. Turn alerts on, confirm the audience,
+   and use **Send for this stream** to send once.
+5. Enable Twitch and Kick webhooks one at a time, then repeat a short
+   broadcast with polling enabled. Verify one alert per session. Track a
+   scheduled YouTube link and verify that it alerts after the video goes live.
 
 ### Both new providers authenticate without the creator's account
 
@@ -1172,10 +1214,8 @@ channel going live.
   not a way past the filter.
 - **Moderation commands need `Administrator`.** A server that wants a separate
   Moderator role cannot have one yet.
-- **YouTube polling is quota-bound.** Every poll costs 101 units against a
-  default 10,000 per day, so thirty minutes is the practical interval (fifteen
-  leaves no room for dashboard checks). This is YouTube's pricing, not a Komu
-  limit.
+- **YouTube discovery is quota-bound.** Scheduled video links can be checked
+  more often. Very short untracked broadcasts can still be missed.
 - **Live-stream alerts and the non-admin `/setup` refusal are not yet
   observed end to end.** The manual pass covered sign-in, bot login, command
   registration, moderation, the dashboard test alert and XP accrual. A real

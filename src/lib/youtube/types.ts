@@ -61,6 +61,7 @@ export interface YouTubeVideoItem {
     /** Present only while a broadcast is running. */
     actualStartTime?: string;
     actualEndTime?: string;
+    scheduledStartTime?: string;
     concurrentViewers?: string;
     activeLiveChatId?: string;
   };

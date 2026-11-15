@@ -14,6 +14,9 @@ import { buildChannelUrl as buildKickChannelUrl } from "@/lib/kick/normalize";
 import { createLogger } from "@/lib/logger";
 import { buildChannelUrl as buildTwitchChannelUrl } from "@/lib/twitch/normalize";
 import { INPUT_LIMITS } from "@/lib/validation/limits";
+import { lockStreamAccount, reconcileLiveAlert, recordStreamObservation, sendLiveAlert } from "@/lib/streams/alert-delivery";
+import { noteLiveCheckFailure, observeLiveStream, readYouTubeVideoStatus } from "@/lib/streams/poller";
+import { checkYouTubeBroadcast } from "@/lib/youtube/broadcast-tracking";
 import { buildChannelUrl as buildYouTubeChannelUrl } from "@/lib/youtube/normalize";
 
 /**
@@ -45,6 +48,93 @@ const CHANNEL_URL_BUILDERS: Record<
 export interface AlertFormState {
   ok?: boolean;
   error?: string;
+  message?: string;
+}
+
+export async function recoverLiveAlertAction(
+  streamId: string, _previous: AlertFormState, form: FormData,
+): Promise<AlertFormState> {
+  const guild = await requireGuild("/dashboard/alerts");
+  if (form.get("intent") === "check") {
+    try {
+      if (await reconcileLiveAlert(guild.id, streamId)) {
+        refresh();
+        return { ok: true, message: "Linked the existing Discord post. Members whose earlier reactions were missed can remove and re-add them." };
+      }
+      return { error: "Could not verify the original Discord post. Check channel access and message history." };
+    } catch {
+      return { error: "Could not check Discord right now. Try again shortly." };
+    }
+  }
+  if (form.get("intent") !== "send") return { error: "Choose a recovery action." };
+  const row = await prisma.stream.findFirst({
+    where: { id: streamId, guildId: guild.id, endedAt: null, streamingAccount: { disconnectedAt: null } },
+    include: { delivery: true, streamingAccount: { include: { alertConfig: true } } },
+  });
+  const account = row?.streamingAccount;
+  const settings = account?.alertConfig;
+  if (!row || !account || !row.delivery || !["SKIPPED", "BLOCKED", "PENDING"].includes(row.delivery.status) ||
+    !settings?.enabled || !settings.channelId) {
+    return { error: "This alert is no longer eligible. Refresh the page and check its settings." };
+  }
+  const channelId = String(form.get("channelId") ?? "");
+  const roleId = String(form.get("roleId") ?? "") || null;
+  if (settings.channelId !== channelId || (settings.mentionEnabled ? settings.mentionRoleId : null) !== roleId) {
+    return { error: "The destination or mention changed. Refresh and confirm the new audience." };
+  }
+  const observedAt = new Date();
+  let live;
+  let confirmedEnd = true;
+  try {
+    if (account.provider === "YOUTUBE") {
+      const result = await readYouTubeVideoStatus(account, row.providerStreamId);
+      live = result.live;
+      confirmedEnd = result.ended;
+    } else {
+      live = await observeLiveStream(account);
+    }
+  } catch {
+    await noteLiveCheckFailure(account.id, observedAt);
+    refresh();
+    return { error: "The provider did not confirm the broadcast. Try again shortly." };
+  }
+  try {
+    if (live?.providerStreamId !== row.providerStreamId) {
+      const newerBroadcast = live?.startedAt && +live.startedAt > +row.startedAt;
+      if (newerBroadcast || (!live && confirmedEnd)) {
+        await recordStreamObservation(account.id, null, observedAt, row.providerStreamId);
+      } else {
+        await noteLiveCheckFailure(account.id, observedAt);
+      }
+      refresh();
+      return { error: "The provider did not confirm that this broadcast is still live." };
+    }
+    const outcome = await sendLiveAlert(account.id, row.id, live, true, { channelId, roleId });
+    refresh();
+    if (outcome === "ALERTED") return { ok: true, message: "Live alert posted." };
+    return { error: "No new post was confirmed. Review the updated status below." };
+  } catch {
+    return { error: "Komu could not finish the recovery. Refresh and check the delivery status." };
+  }
+}
+
+export async function checkYouTubeBroadcastAction(
+  _previous: AlertFormState, form: FormData,
+): Promise<AlertFormState> {
+  const guild = await requireGuild("/dashboard/alerts");
+  const link = String(form.get("link") ?? "");
+  if (link.length > 2048) return { error: "Enter a valid YouTube broadcast link." };
+  const intent = form.get("intent");
+  if (intent !== "track" && intent !== "check") return { error: "Choose a broadcast action." };
+  const track = intent === "track";
+  try {
+    const error = await checkYouTubeBroadcast(guild.id, String(form.get("accountId") ?? ""), link, track);
+    if (error) return { error };
+    refresh();
+    return { ok: true, message: track ? "Broadcast tracking saved." : "YouTube confirmed the live broadcast. See recent alerts for the result." };
+  } catch {
+    return { error: "Could not verify the broadcast with YouTube. Try again shortly." };
+  }
 }
 
 // The initial state lives with the form that uses it, in AlertForm. A
@@ -151,11 +241,36 @@ export async function saveAlertSettingsAction(
     watchButtonLabel: watchButtonLabel || "Watch Now",
   };
 
-  await prisma.alertConfiguration.upsert({
-    where: { streamingAccountId: account.id },
-    update: settings,
-    create: { streamingAccountId: account.id, guildId: guild.id, ...settings },
+  const saved = await prisma.$transaction(async (tx) => {
+    const current = await lockStreamAccount(tx, account.id);
+    if (!current || current.guildId !== guild.id || current.disconnectedAt) return false;
+    await tx.alertConfiguration.upsert({
+      where: { streamingAccountId: account.id },
+      update: settings,
+      create: { streamingAccountId: account.id, guildId: guild.id, ...settings },
+    });
+    const reason = !settings.enabled ? "ALERTS_OFF" : !settings.channelId ? "NO_CHANNEL" : null;
+    const roleId = settings.mentionEnabled ? settings.mentionRoleId : null;
+    const affected = {
+      stream: { streamingAccountId: account.id, endedAt: null },
+      status: "PENDING" as const,
+      ...(reason ? {} : { OR: [
+        { channelId: null },
+        { channelId: { not: settings.channelId } },
+        ...(roleId ? [{ roleId: null }, { roleId: { not: roleId } }] : [{ roleId: { not: null } }]),
+      ] }),
+    };
+    await tx.streamAlertDelivery.updateMany({
+      where: { ...affected, claim: null },
+      data: { status: reason ? "SKIPPED" : "BLOCKED", reason: reason ?? "AUDIENCE_CHANGED" },
+    });
+    await tx.streamAlertDelivery.updateMany({
+      where: { ...affected, claim: { not: null } },
+      data: { reason: reason ?? "AUDIENCE_CHANGED" },
+    });
+    return true;
   });
+  if (!saved) return { error: "That channel is no longer connected." };
 
   log.info("Saved alert settings", {
     guildId: guild.id,

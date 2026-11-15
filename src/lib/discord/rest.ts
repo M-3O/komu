@@ -45,6 +45,8 @@ export interface DiscordWriteResult {
   error?: string;
   /** Discord error code, for logs. */
   code?: string;
+  status?: number;
+  retryAfterMs?: number;
 }
 
 const OK: DiscordWriteResult = { ok: true };
@@ -64,6 +66,7 @@ function getBotToken(): string {
 interface DiscordErrorBody {
   message?: string;
   code?: number;
+  retry_after?: number;
 }
 
 async function discordRequest<T>(
@@ -122,6 +125,7 @@ async function performDiscordRequest<T>(
   }
 
   const payload = (await response.json().catch(() => ({}))) as DiscordErrorBody;
+  const retryAfter = Math.max(Number(response.headers.get("Retry-After") ?? 0), payload.retry_after ?? 0);
 
   // 50013 missing permissions, 50001/403 role or channel hierarchy.
   let message = "Discord rejected the request.";
@@ -151,6 +155,9 @@ async function performDiscordRequest<T>(
       ok: false,
       error: message,
       code: payload.code ? `DISCORD_${payload.code}` : `HTTP_${response.status}`,
+      status: response.status,
+      retryAfterMs: response.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.ceil(retryAfter * 1000) : undefined,
     },
   };
 }
@@ -264,6 +271,7 @@ export interface DiscordActionRow {
 }
 
 export interface SendMessageInput {
+  nonce?: string;
   /** Plain text above the embed. Used for the role mention. */
   content?: string;
   embeds?: DiscordEmbed[];
@@ -302,6 +310,8 @@ export async function sendChannelMessage(
       // camelCase. Dropping this field would silently allow every mention in
       // the content, so it is mapped explicitly rather than passed through.
       allowed_mentions: input.allowedMentions,
+      nonce: input.nonce,
+      enforce_nonce: input.nonce ? true : undefined,
     },
   );
 
@@ -310,4 +320,31 @@ export async function sendChannelMessage(
   // The id is returned so callers can identify the message later, which is
   // how reactions on a live alert are matched back to a stream session.
   return { ...OK, messageId: result.data.id };
+}
+
+export async function findOwnAlertMessage(channelId: string, reference: string, attemptedAt: Date) {
+  const bot = await discordRequest<{ id: string }>("GET", "/users/@me");
+  if (!bot.ok || !bot.data.id) return null;
+  // Start at the send window so later channel traffic cannot exhaust the scan.
+  const discordEpoch = 1420070400000;
+  let before = (BigInt(+attemptedAt + 120_000 - discordEpoch) << BigInt(22)).toString();
+  for (let page = 0; page < 5; page += 1) {
+    const messages = await discordRequest<Array<{
+      id: string;
+      author: { id: string };
+      content: string;
+      timestamp: string;
+    }>>("GET", `/channels/${channelId}/messages?limit=100&before=${before}`);
+    if (!messages.ok || !Array.isArray(messages.data)) return null;
+    for (const message of messages.data) {
+      const postedAt = new Date(message.timestamp);
+      if (+postedAt < +attemptedAt - 60_000) return null;
+      if (message.author.id === bot.data.id && message.content.endsWith(`-# Alert ref: ${reference}`)) {
+        return { id: message.id, postedAt };
+      }
+    }
+    if (messages.data.length < 100) break;
+    before = messages.data[99].id;
+  }
+  return null;
 }

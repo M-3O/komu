@@ -83,7 +83,7 @@ describe("applyPlaceholders", () => {
     const sparse = { ...stream, title: null, game: null, viewerCount: null };
     const result = applyPlaceholders("{title}|{game}|{viewers}", sparse, "Sandy");
 
-    expect(result).toBe("a stream|just chatting|0");
+    expect(result).toBe("a stream|just chatting|unavailable");
   });
 });
 
@@ -251,9 +251,25 @@ describe("buildAlertMessage", () => {
     });
 
     expect(message.error).toBeUndefined();
-    expect(message.content).toBeUndefined();
+    expect(message.content).toBe(`Sandy is live. ${stream.url}`);
     expect(message.embeds).toBeUndefined();
     expect(message.components).toBeUndefined();
+  });
+
+  it("includes role, fallback text and the delivery reference with embeds off", () => {
+    const message = buildAlertMessage({
+      stream, creatorName: "Sandy", deliveryReference: "reference",
+      settings: settings({ embedEnabled: false, watchButtonEnabled: false }),
+    });
+    expect(message.content).toBe(["<@&222>", `Sandy is live. ${stream.url}`, "-# Alert ref: reference"].join("\n"));
+  });
+
+  it("rejects a template that exceeds Discord's limit after rendering", () => {
+    const message = buildAlertMessage({
+      stream, creatorName: "Sandy",
+      settings: settings({ embedEnabled: false, messageMode: "CUSTOM", customMessage: "{url}".repeat(75) }),
+    });
+    expect(message.error).toContain("exceeds Discord");
   });
 
   it("defuses mass mentions in the custom text", () => {

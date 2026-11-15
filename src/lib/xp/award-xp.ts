@@ -39,6 +39,7 @@ export interface AwardXpInput {
   amount: number;
   source: XPSource;
   reason?: string;
+  attendanceId?: string;
   /**
    * Skip the daily cap. Used for manual moderator grants and rewards, which
    * should not be silently reduced by a message-grinding limit.
@@ -181,6 +182,7 @@ export async function awardXp(
         amount,
         source: input.source,
         reason: input.reason,
+        attendanceId: input.attendanceId,
       },
     });
 
