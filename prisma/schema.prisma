@@ -346,9 +346,12 @@ model StreamingAccount {
 
   /// Set when the creator disconnects the account.
   disconnectedAt DateTime?
+  liveObservedAt DateTime?
+  liveCheckFailedAt DateTime?
 
   streams       Stream[]
   alertConfig   AlertConfiguration?
+  youtubeTracking YouTubeBroadcastTracking?
 
   /// One account per creator per provider per guild.
   @@unique([guildId, provider, providerUserId])
@@ -518,6 +521,7 @@ model Stream {
   alertMessageId String?
 
   attendance StreamAttendance[]
+  delivery   StreamAlertDelivery?
 
   @@unique([streamingAccountId, providerStreamId])
   @@index([streamingAccountId, startedAt])
@@ -530,6 +534,76 @@ model Stream {
 
 /// Records that a member was present for a stream. Discord cannot observe
 /// watch time directly, so V1 records explicit attendance.
+enum StreamAlertStatus {
+  PENDING
+  SENT
+  BLOCKED
+  UNCERTAIN
+  SKIPPED
+  EXPIRED
+}
+
+model StreamAlertDelivery {
+  streamId String @id
+  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  reference String @unique
+  status StreamAlertStatus
+  reason String?
+  channelId String?
+  roleId String?
+  lastAttemptAt DateTime?
+  retryAt DateTime?
+  retryCount Int @default(0)
+  claim String?
+  claimUntil DateTime?
+
+  @@index([status, retryAt])
+  @@map("stream_alert_deliveries")
+}
+
+model StreamWebhookEvent {
+  provider StreamingProvider
+  eventId String
+  broadcasterId String
+  observedAt DateTime
+  startedAt DateTime?
+  streamKey String?
+  title String?
+  receivedAt DateTime @default(now())
+  processedAt DateTime?
+
+  @@id([provider, eventId])
+  @@index([processedAt, receivedAt])
+  @@map("stream_webhook_events")
+}
+
+model StreamWebhookHealth {
+  provider StreamingProvider @id
+  checkedAt DateTime
+  ready Boolean
+
+  @@map("stream_webhook_health")
+}
+
+model YouTubeBroadcastTracking {
+  streamingAccountId String @id
+  account StreamingAccount @relation(fields: [streamingAccountId], references: [id], onDelete: Cascade)
+  videoId String
+  scheduledAt DateTime?
+  nextCheckAt DateTime
+  endedAt DateTime?
+
+  @@index([nextCheckAt])
+  @@map("youtube_broadcast_tracking")
+}
+
+model YouTubeSearchBudget {
+  day String @id
+  calls Int
+
+  @@map("youtube_search_budgets")
+}
+
 model StreamAttendance {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -542,6 +616,7 @@ model StreamAttendance {
 
   /// Set when the member reacted to the alert or ran `/attend`.
   method String @default("REACTION")
+  xpTransaction XPTransaction?
 
   @@unique([streamId, memberId])
   @@index([memberId, createdAt])
@@ -610,6 +685,8 @@ model XPTransaction {
   source XPSource
   /// Free-text note, e.g. "Reward: 10 hours watched".
   reason String?
+  attendanceId String? @unique
+  attendance StreamAttendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
 
   @@index([memberId, createdAt])
   @@index([guildId, createdAt])

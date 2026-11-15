@@ -40,6 +40,7 @@ export interface AlertMessageInput {
   creatorName: string;
   /** Marks the message as a test so creators can tell it apart. */
   isTest?: boolean;
+  deliveryReference?: string;
 }
 
 export interface BuiltAlertMessage {
@@ -70,7 +71,7 @@ export function applyPlaceholders(
     url: stream.url,
     creator: creatorName,
     viewers:
-      stream.viewerCount === null ? "0" : String(stream.viewerCount),
+      stream.viewerCount === null ? "unavailable" : String(stream.viewerCount),
   };
 
   return template.replace(PLACEHOLDER_PATTERN, (match, key: string) =>
@@ -192,7 +193,7 @@ export function buildWatchButton(settings: AlertSettings): DiscordActionRow {
 export function buildAlertMessage(
   input: AlertMessageInput,
 ): BuiltAlertMessage {
-  const { stream, settings } = input;
+  const { stream, settings, creatorName, deliveryReference, isTest } = input;
 
   if (!settings.channelId) {
     return { error: "Choose a Discord channel first." };
@@ -202,22 +203,18 @@ export function buildAlertMessage(
     allowedMentions: buildAllowedMentions(settings),
   };
 
-  const content = buildMentionContent(settings);
-  if (content) message.content = content;
-
+  const lines = [buildMentionContent(settings)];
   if (settings.embedEnabled) {
     message.embeds = [buildEmbed(input)];
-  } else if (settings.messageMode === "CUSTOM" && settings.customMessage) {
-    // Without an embed the custom text has to go somewhere visible.
-    message.content = [
-      content,
-      defuseMentions(
-        applyPlaceholders(settings.customMessage, stream, input.creatorName),
-      ),
-    ]
-      .filter(Boolean)
-      .join("\n");
+  } else {
+    const custom = settings.messageMode === "CUSTOM" && settings.customMessage
+      ? applyPlaceholders(settings.customMessage, stream, creatorName).trim() : "";
+    if (isTest) lines.push("**Komu test alert**");
+    lines.push(defuseMentions(custom || `${creatorName} is live. ${stream.url}`));
   }
+  if (deliveryReference) lines.push(`-# Alert ref: ${deliveryReference}`);
+  const content = lines.filter(Boolean).join("\n");
+  if (content) message.content = content;
 
   if (settings.watchButtonEnabled) {
     const row = buildWatchButton(settings);
@@ -225,7 +222,22 @@ export function buildAlertMessage(
     message.components = [row];
   }
 
+  const embed = message.embeds?.[0];
+  if (content.length > 2000 || (embed && exceedsEmbedLimits(embed))) {
+    return { error: "The rendered message exceeds Discord’s limits. Shorten the custom message." };
+  }
   return message;
+}
+
+function exceedsEmbedLimits(embed: DiscordEmbed) {
+  const title = embed.title?.length ?? 0;
+  const description = embed.description?.length ?? 0;
+  const footer = embed.footer?.text.length ?? 0;
+  const fields = embed.fields ?? [];
+  const fieldLength = fields.reduce((total, field) => total + field.name.length + field.value.length, 0);
+  return title > 256 || description > 4096 || footer > 2048 ||
+    fields.some((field) => field.name.length > 256 || field.value.length > 1024) ||
+    title + description + footer + fieldLength > 6000;
 }
 
 /** Parse `#7c5cff` or `7c5cff` into Discord's integer colour. */

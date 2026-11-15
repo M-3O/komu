@@ -12,8 +12,8 @@
  * Two intervals exist because the providers have different limits:
  *
  * - `STREAM_POLL_INTERVAL_SECS` is the YouTube interval (and the fallback for
- *   every provider when the fast interval is not set). YouTube costs 101
- *   quota units per lookup, so 1800 seconds is the safe default.
+ *   every provider when the fast interval is not set). The 30-minute
+ *   default leaves room in the YouTube discovery budget for dashboard reads.
  * - `STREAM_POLL_FAST_INTERVAL_SECS` covers Twitch and Kick, which can be
  *   checked every 60 seconds without that quota cost.
  *
@@ -61,6 +61,8 @@ export async function register() {
 
   if (!mainIntervalMs && !fastIntervalMs) return;
 
+  const { startStreamMaintenance } = await import("@/lib/streams/maintenance");
+  startStreamMaintenance();
   const { startStreamPoller } = await import("@/lib/streams/poller-runtime");
 
   if (fastIntervalMs) {

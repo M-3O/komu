@@ -87,7 +87,7 @@ async function request(
 }
 
 /** Get an access token, reusing the cached one until it expires. */
-async function getAccessToken(): Promise<string> {
+export async function getAccessToken(): Promise<string> {
   const now = Date.now();
 
   if (cachedToken && cachedToken.expiresAt > now) {

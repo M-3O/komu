@@ -19,18 +19,11 @@ import type {
  * channel is live is public information, so the creator never has to grant
  * Komu access to their Google account.
  *
- * Quota cost is the thing to understand here. YouTube charges per request out
- * of a daily allowance, and `search.list` costs **100 units** while
- * `channels.list` and `videos.list` cost 1. The default daily allowance is
- * 10,000, so a 60-second poll of a YouTube channel would exhaust it in under
- * two hours. See README "YouTube quota" before choosing a poll interval.
+ * Discovery uses the separate daily search.list budget. Checking a known
+ * video ID uses videos.list and does not consume discovery calls.
  */
 
 const API_BASE = "https://www.googleapis.com/youtube/v3";
-
-/** `search.list` is expensive; everything else here is cheap. */
-export const SEARCH_QUOTA_COST = 100;
-export const CHEAP_QUOTA_COST = 1;
 
 const RATE_LIMIT_STATUS = 429;
 const QUOTA_STATUS = 403;
@@ -176,10 +169,13 @@ export function getChannelByHandle(handle: string): Promise<YouTubeChannelItem[]
 /**
  * The channel's current live video, or an empty array when offline.
  *
- * **100 quota units.** This is the expensive call, and the reason the README
- * warns against a short poll interval.
+ * Counts against the project's separate daily discovery allowance.
  */
-export function getLiveVideo(channelId: string): Promise<YouTubeSearchItem[]> {
+export async function getLiveVideo(channelId: string): Promise<YouTubeSearchItem[]> {
+  const { reserveYouTubeSearch } = await import("./search-budget");
+  if (!(await reserveYouTubeSearch())) {
+    throw new YouTubeApiError("Komu reached its daily YouTube discovery limit.", 429, "RATE_LIMITED");
+  }
   return apiGet<YouTubeSearchItem>("/search", {
     part: "snippet",
     channelId,

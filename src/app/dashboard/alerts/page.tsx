@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
+import { connection } from "next/server";
 
 import {
   Badge,
@@ -18,13 +19,11 @@ import {
 } from "@/components/dashboard/ui";
 import { requireCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
-import {
-  isTextChannelType,
-  listGuildChannels,
-  listGuildRoles,
-} from "@/lib/discord/rest";
+import { isTextChannelType } from "@/lib/discord/rest";
 import { AlertsWorkspace } from "./AlertsWorkspace";
 import type { AlertAccount } from "./types";
+import { RecentLiveAlerts } from "./RecentLiveAlerts";
+import { getDiscordDestinations } from "./discord-destinations";
 
 export const metadata = { title: "Stream Alerts" };
 
@@ -58,8 +57,16 @@ export default function AlertsPage() {
       <Suspense fallback={<AlertsSkeleton />}>
         <AlertSettingsPanel />
       </Suspense>
+      <Suspense fallback={<p>Loading recent live alerts…</p>}>
+        <LiveAlertHistory />
+      </Suspense>
     </div>
   );
+}
+
+async function LiveAlertHistory() {
+  await connection();
+  return <RecentLiveAlerts now={new Date().getTime()} />;
 }
 
 async function AlertSettingsPanel() {
@@ -113,10 +120,7 @@ async function AlertSettingsPanel() {
   }
 
   // Ask Discord once for the server's channels and roles.
-  const [allChannels, allRoles] = await Promise.all([
-    listGuildChannels(guild.discordId),
-    listGuildRoles(guild.discordId),
-  ]);
+  const [allChannels, allRoles] = await getDiscordDestinations(guild.discordId);
 
   const channels = allChannels
     .filter((channel) => isTextChannelType(channel.type))

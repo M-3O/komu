@@ -128,6 +128,11 @@ export async function POST(request: Request) {
   }
 
   const startedAt = Date.now();
+  const { runStreamMaintenance } = await import("@/lib/streams/maintenance");
+  await runStreamMaintenance();
+  if (new URL(request.url).searchParams.get("mode") === "maintenance") {
+    return Response.json({ ok: true });
+  }
   const result = await runStreamDetectionCycle();
 
   log.info("Detection cycle finished", {

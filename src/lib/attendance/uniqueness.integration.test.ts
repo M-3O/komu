@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { recordStreamAttendance } from "@/lib/attendance/record-attendance";
 import { unlockAchievementsForMember } from "@/lib/achievements/unlock";
 import { prisma } from "@/lib/db";
+import * as xpService from "@/lib/xp/award-xp";
 import { cleanupMember, createTestMember, requireGuild } from "@/test/integration-helpers";
 
 /**
@@ -83,6 +84,38 @@ async function guildDiscordId(): Promise<string> {
 }
 
 describe("stream attendance deduplication", () => {
+  it("rolls back attendance and XP together and pays once after a retry", async () => {
+    const member = await createTestMember(guild.id, MEMBER_SEED);
+    const stream = await createAlertStream();
+    const discordId = await guildDiscordId();
+    const react = () => recordStreamAttendance({
+      alertMessageId: ALERT_MESSAGE, discordUserId: member.discordId,
+      guildDiscordId: discordId, username: "test",
+    });
+    const original = xpService.awardXp;
+    const award = vi.spyOn(xpService, "awardXp").mockImplementationOnce(async (input, tx) => {
+      await original(input, tx);
+      throw new Error("Injected XP write failure");
+    });
+    try {
+      await expect(react()).rejects.toThrow("Injected XP write failure");
+    } finally {
+      award.mockRestore();
+    }
+    expect(await prisma.streamAttendance.count({ where: { streamId: stream.id } })).toBe(0);
+    expect(await prisma.xPTransaction.count({ where: { memberId: member.id } })).toBe(0);
+    expect(await prisma.guildMember.findUnique({ where: { id: member.id } }))
+      .toMatchObject({ streamAttendanceCount: 0, xp: 0 });
+    const results = await Promise.all([react(), react()]);
+    expect(results.filter((result) => result.recorded)).toHaveLength(1);
+    const attendance = await prisma.streamAttendance.findUniqueOrThrow({
+      where: { streamId_memberId: { streamId: stream.id, memberId: member.id } },
+      include: { xpTransaction: true },
+    });
+    expect(attendance.xpTransaction).toMatchObject({ amount: 25, source: "STREAM_ATTENDANCE" });
+    expect(await prisma.guildMember.findUnique({ where: { id: member.id } }))
+      .toMatchObject({ streamAttendanceCount: 1, xp: 25 });
+  });
   it("records once and refuses a second reaction for the same stream", async () => {
     const member = await createTestMember(guild.id, MEMBER_SEED);
     const stream = await createAlertStream();

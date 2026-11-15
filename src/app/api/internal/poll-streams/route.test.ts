@@ -5,6 +5,7 @@ const { runStreamDetectionCycle } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/streams/poller", () => ({ runStreamDetectionCycle }));
+vi.mock("@/lib/streams/maintenance", () => ({ runStreamMaintenance: vi.fn() }));
 
 import * as route from "./route";
 
@@ -103,6 +104,15 @@ describe("poll trigger", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(CYCLE);
     expect(runStreamDetectionCycle).toHaveBeenCalledTimes(1);
+  });
+
+  it("can run maintenance without spending discovery quota", async () => {
+    const response = await route.POST(request(
+      { "x-forwarded-for": "203.0.113.16", "x-poll-secret": SECRET },
+      "/api/internal/poll-streams?mode=maintenance",
+    ));
+    expect(response.status).toBe(200);
+    expect(runStreamDetectionCycle).not.toHaveBeenCalled();
   });
 
   it("locks out an address after repeated failures", async () => {

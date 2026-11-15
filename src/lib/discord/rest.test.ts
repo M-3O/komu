@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HealthRegistry, health } from "@/lib/monitoring/health";
-import { listGuildChannels, sendChannelMessage } from "./rest";
+import { findOwnAlertMessage, listGuildChannels, sendChannelMessage } from "./rest";
 
 let registry: HealthRegistry;
 const fetchMock = vi.fn();
@@ -49,5 +49,27 @@ describe("Discord REST monitoring without retries", () => {
     fetchMock.mockResolvedValue({ ok: true, json: () => Promise.reject(error) });
     await expect(sendChannelMessage("unit-channel", {})).rejects.toBe(error);
     expect(status().lastError).toBe("DISCORD_REQUEST_FAILED");
+  });
+  it("enforces the alert nonce and preserves the rate limit wait", async () => {
+    fetchMock.mockResolvedValue(Response.json({ retry_after: 2.5 }, {
+      status: 429, headers: { "Retry-After": "2" },
+    }));
+    expect(await sendChannelMessage("unit-channel", { content: "live", nonce: "alert-reference" }))
+      .toMatchObject({ status: 429, retryAfterMs: 2500 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body))
+      .toMatchObject({ nonce: "alert-reference", enforce_nonce: true });
+  });
+  it("finds only the original bot's matching message in the attempted channel", async () => {
+    const timestamp = new Date();
+    const body = { content: "-# Alert ref: exact-reference", timestamp: timestamp.toISOString() };
+    fetchMock.mockResolvedValueOnce(Response.json({ id: "komu" })).mockResolvedValueOnce(Response.json([
+      { ...body, id: "copied", author: { id: "another-bot" } },
+      { ...body, id: "sent", author: { id: "komu" } },
+    ]));
+    expect(await findOwnAlertMessage("unit-channel", "exact-reference", timestamp))
+      .toEqual({ id: "sent", postedAt: timestamp });
+    expect(fetchMock.mock.calls[1][0]).toContain("/channels/unit-channel/messages");
+    const before = new URL(fetchMock.mock.calls[1][0]).searchParams.get("before");
+    expect(Number(BigInt(before!) >> BigInt(22)) + 1420070400000).toBe(+timestamp + 120_000);
   });
 });

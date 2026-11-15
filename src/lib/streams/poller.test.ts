@@ -14,6 +14,8 @@ vi.mock("@/lib/discord/rest", () => ({
   sendChannelMessage: vi.fn(),
 }));
 
+vi.mock("./alert-delivery", () => ({ markStaleAlertClaims: vi.fn() }));
+
 vi.mock("./registry", () => ({
   getStreamingProvider: vi.fn(),
 }));
