@@ -209,6 +209,7 @@ model DiscordAccount {
 
 /// A Discord server Komu manages. V1 creates exactly one.
 model Guild {
+  seasons Season[]
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -253,6 +254,8 @@ model Guild {
 
 /// A member of the Discord server, plus the counters the XP system uses.
 model GuildMember {
+  seasonCheckIns SeasonCheckIn[]
+  seasonGrants SeasonRoleGrant[]
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -320,6 +323,7 @@ model GuildMember {
 
 /// A creator's channel on Twitch, YouTube or Kick, connected to a guild.
 model StreamingAccount {
+  seasonSlots SeasonSlot[]
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -491,6 +495,7 @@ model TikTokOAuthAttempt {
 /// when they stop. Alert de-duplication is keyed on this record
 /// (PRD section 7.4).
 model Stream {
+  seasonBroadcast SeasonBroadcast?
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -602,6 +607,116 @@ model YouTubeSearchBudget {
   calls Int
 
   @@map("youtube_search_budgets")
+}
+
+enum SeasonStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum SeasonPostStatus {
+  PENDING
+  CLAIMED
+  UNCERTAIN
+  BLOCKED
+  SENT
+}
+
+enum SeasonGrantStatus {
+  PENDING
+  BLOCKED
+  GRANTED
+}
+
+model Season {
+  id String @id @default(cuid())
+  guildId String
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name String
+  timeZone String
+  goal Int
+  roleId String
+  endsAt DateTime
+  createdAt DateTime @default(now())
+  activatedAt DateTime?
+  closedAt DateTime?
+  status SeasonStatus @default(DRAFT)
+  slots SeasonSlot[]
+  grants SeasonRoleGrant[]
+
+  @@index([guildId, status])
+  @@map("seasons")
+}
+
+model SeasonSlot {
+  id String @id @default(cuid())
+  seasonId String
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  accountId String
+  account StreamingAccount @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  scheduledAt DateTime
+  videoId String?
+  nextVideoCheckAt DateTime?
+  cancelledAt DateTime?
+  broadcasts SeasonBroadcast[]
+  checkIns SeasonCheckIn[]
+
+  @@index([seasonId, scheduledAt])
+  @@index([nextVideoCheckAt])
+  @@map("season_slots")
+}
+
+model SeasonBroadcast {
+  id String @id @default(cuid())
+  slotId String
+  slot SeasonSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  streamId String @unique
+  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  supersededAt DateTime?
+  openedAt DateTime?
+  postChannelId String?
+  postMessageId String? @unique
+  fallbackReference String @unique
+  fallbackStatus SeasonPostStatus @default(PENDING)
+  fallbackClaim String?
+  fallbackAttemptAt DateTime?
+  fallbackRetryAt DateTime?
+
+  @@index([slotId, supersededAt])
+  @@map("season_broadcasts")
+}
+
+model SeasonCheckIn {
+  slotId String
+  slot SeasonSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  memberId String
+  member GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  checkedInAt DateTime @default(now())
+
+  @@id([slotId, memberId])
+  @@index([memberId])
+  @@map("season_check_ins")
+}
+
+model SeasonRoleGrant {
+  id String @id @default(cuid())
+  seasonId String
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  memberId String
+  member GuildMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  roleId String
+  status SeasonGrantStatus @default(PENDING)
+  reason String?
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  claim String?
+  claimUntil DateTime?
+  grantedAt DateTime?
+
+  @@unique([seasonId, memberId])
+  @@index([status, nextAttemptAt])
+  @@map("season_role_grants")
 }
 
 model StreamAttendance {

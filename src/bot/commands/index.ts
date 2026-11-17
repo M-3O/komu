@@ -25,6 +25,8 @@ import { handlePing, pingCommand } from "./ping";
 import { handleProfile, profileCommand } from "./profile";
 import { handleReward, handleRewardAutocomplete, rewardCommand } from "./reward";
 import { handleSetup, setupCommand } from "./setup";
+import { handleSeason, seasonCommand } from "./season";
+import { seasonsEnabled } from "@/lib/seasons/lifecycle";
 
 /**
  * The command registry.
@@ -52,6 +54,7 @@ export const COMMANDS: BotCommand[] = [
   { definition: profileCommand, handle: handleProfile },
   { definition: leaderboardCommand, handle: handleLeaderboard },
   { definition: challengeCommand, handle: handleChallenge },
+  ...(seasonsEnabled() ? [{ definition: seasonCommand, handle: handleSeason }] : []),
   { definition: achievementsCommand, handle: handleAchievements },
   {
     definition: rewardCommand,

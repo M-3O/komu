@@ -251,6 +251,42 @@ working without dashboard-only configuration.
 - **Offline is tracked.** Sessions get an end time, which is what lets a
   later stream be recognised as new.
 
+## Seasons
+
+Seasons let a creator reward members who check in across a series of
+selected broadcasts. Set up a draft in **Gamification → Seasons**, choose an
+assignable Discord role, and add at least two scheduled streams. Slots can
+use different connected accounts. A scheduled YouTube link lets Komu check
+that video directly during its slot.
+
+Komu matches the first broadcast from that account within 30 minutes before
+or 60 minutes after its scheduled start. Reschedule an unused slot or attach
+a verified live broadcast in the dashboard if a stream goes off schedule.
+Replacing a broadcast preserves credit for the slot and closes the old
+button. Duplicating a season shifts its slots by the same amount of elapsed
+time and clears pinned video links. Review the new local times across
+daylight-saving changes before activating.
+
+Members press **Check in** on the alert and can see their progress privately
+with `/season`. Check-in closes 15 minutes after the detected end, at the end
+of the season, or six hours after the check-in post opened, whichever comes
+first. An ordinary reaction still counts as stream attendance. The season
+button awards the usual attendance XP once per broadcast and counts once per
+slot. Attendance tracks participation in Discord.
+
+If no check-in post is linked, choose **Recover check-in post** on the
+slot. Komu tries to restore or edit the existing alert first. The fallback
+post uses the configured alert channel and has no role mention. Earned roles
+stay queued even when a season closes. If a role is blocked, fix the reason
+shown in the recap and select **Retry role**.
+
+For a private pilot, apply the Seasons migration to the isolated database,
+enable `KOMU_SEASONS_ENABLED=true` in the web and bot processes, and register
+the Discord commands for the test server. Check in as the same member on two
+different platforms, verify that the goal delivers one role, and confirm
+the recap counts the member as returning. Keep the normal stream maintenance
+timer or authenticated maintenance schedule running.
+
 ## XP and levels
 
 Members earn XP for qualifying Discord messages. `/level` and `/profile`

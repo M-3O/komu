@@ -9,6 +9,8 @@ import type { Client } from "discord.js";
 
 import { createLogger } from "@/lib/logger";
 import { getAutocompleteHandler, getHandler } from "../commands";
+import { handleSeasonCheckIn } from "../commands/season";
+import { CHECK_IN_PREFIX } from "@/lib/seasons/check-in";
 
 const log = createLogger("bot");
 
@@ -26,6 +28,17 @@ export function registerInteractionCreate(client: Client): void {
 }
 
 async function onInteraction(interaction: Interaction) {
+  if (interaction.isButton() && interaction.customId.startsWith(CHECK_IN_PREFIX)) {
+    try {
+      await handleSeasonCheckIn(interaction);
+    } catch {
+      log.warn("Season check-in failed", { guildId: interaction.guildId });
+      const content = "Komu couldn’t confirm the check-in. Tap again to see your progress.";
+      if (interaction.deferred && !interaction.replied) await interaction.editReply(content);
+      else if (!interaction.replied) await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+    }
+    return;
+  }
   // Autocomplete arrives as its own interaction type and must be answered
   // before the command is ever run, so it is routed first.
   if (interaction.isAutocomplete()) {

@@ -35,6 +35,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/leaderboards": BarChart3,
   "/dashboard/rewards": Gift,
   "/dashboard/challenges": Swords,
+  "/dashboard/seasons": Medal,
   "/dashboard/achievements": Medal,
   "/dashboard/moderation": Shield,
   "/dashboard/analytics": LineChart,
@@ -48,13 +49,13 @@ const NAV_ICONS: Record<string, LucideIcon> = {
  * and `useState` drives the mobile drawer. On a narrow screen the sidebar is
  * a drawer behind a menu button; on desktop it is a fixed command rail.
  */
-export function DashboardNav() {
+export function DashboardNav({ showSeasons = false }: { showSeasons?: boolean }) {
   const pathname = usePathname();
 
-  return <Drawer key={pathname} pathname={pathname} />;
+  return <Drawer key={pathname} pathname={pathname} showSeasons={showSeasons} />;
 }
 
-function Drawer({ pathname }: { pathname: string }) {
+function Drawer({ pathname, showSeasons }: { pathname: string; showSeasons: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -124,7 +125,7 @@ function Drawer({ pathname }: { pathname: string }) {
               <div key={section.title}>
                 <p className="komu-label px-2 pb-2 text-[10px]">{section.title}</p>
                 <ul className="flex flex-col gap-1">
-                  {section.items.map((item) => {
+                  {section.items.filter((item) => showSeasons || item.href !== "/dashboard/seasons").map((item) => {
                     const isActive =
                       item.href === "/dashboard"
                         ? pathname === item.href

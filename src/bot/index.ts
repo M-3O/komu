@@ -22,6 +22,7 @@ import { registerMessageCreate } from "./events/message-create";
 import { registerMessageReactionAdd } from "./events/message-reaction-add";
 import { registerReady } from "./events/ready";
 import { startBotRuntime } from "./runtime";
+import { registerSeasonGrantWorker } from "./services/season-grants";
 
 async function main() {
   const client = new Client({ intents: [...INTENTS], partials: [...PARTIALS] });
@@ -38,6 +39,7 @@ async function main() {
       registerMessageCreate(client);
       registerGuildMemberAdd(client);
       registerMessageReactionAdd(client);
+      registerSeasonGrantWorker(client);
     },
   });
 }

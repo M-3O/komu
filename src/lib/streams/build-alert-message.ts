@@ -218,7 +218,8 @@ export function buildAlertMessage(
 
   if (settings.watchButtonEnabled) {
     const row = buildWatchButton(settings);
-    row.components[0].url = stream.url;
+    const button = row.components[0];
+    if ("url" in button) button.url = stream.url;
     message.components = [row];
   }
 

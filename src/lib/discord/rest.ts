@@ -257,12 +257,9 @@ export interface DiscordEmbed {
 }
 
 /** A clickable button, used for the Watch Now link. */
-export interface DiscordButton {
-  type: 2;
-  style: 1 | 2 | 3 | 4 | 5;
-  label: string;
-  url: string;
-}
+export type DiscordButton =
+  | { type: 2; style: 5; label: string; url: string }
+  | { type: 2; style: 1 | 2 | 3 | 4; label: string; custom_id: string };
 
 /** One row of message components. */
 export interface DiscordActionRow {
@@ -347,4 +344,49 @@ export async function findOwnAlertMessage(channelId: string, reference: string, 
     before = messages.data[99].id;
   }
   return null;
+}
+
+export async function addChannelMessageButton(channelId: string, messageId: string, button: DiscordButton) {
+  const path = `/channels/${channelId}/messages/${messageId}`;
+  const current = await discordRequest<{ components?: DiscordActionRow[] }>("GET", path);
+  if (!current.ok) return current.result;
+  const rows = current.data.components ?? [];
+  if ("custom_id" in button && rows.some((row) => row.components.some((component) =>
+    "custom_id" in component && component.custom_id === button.custom_id))) return OK;
+  if (rows.length >= 5) return { ok: false, error: "This post has no space for another button." };
+  const edited = await discordRequest<unknown>("PATCH", path, {
+    components: [...rows, { type: 1, components: [button] }],
+    allowed_mentions: { parse: [] },
+  });
+  return edited.ok ? OK : edited.result;
+}
+
+export async function readChannelMessage(channelId: string, messageId: string) {
+  const result = await discordRequest<{ id: string }>("GET", `/channels/${channelId}/messages/${messageId}`);
+  return result.ok ? OK : result.result;
+}
+
+export async function inspectGuildRole(guildId: string, roleId: string) {
+  const roles = await discordRequest<Array<{
+    id: string; name: string; position: number; permissions: string; managed: boolean;
+  }>>("GET", `/guilds/${guildId}/roles`);
+  if (!roles.ok) return "Could not load the server’s roles.";
+  const target = roles.data.find((role) => role.id === roleId);
+  if (!target || roleId === guildId || target.managed) return "Choose a role that Komu can assign.";
+
+  const bot = await discordRequest<{ id: string }>("GET", "/users/@me");
+  if (!bot.ok) return "Could not verify Komu’s Discord permissions.";
+  const member = await discordRequest<{ roles: string[] }>("GET", `/guilds/${guildId}/members/${bot.data.id}`);
+  if (!member.ok) return "Could not verify Komu’s role in this server.";
+  const held = roles.data.filter((role) => role.id === guildId || member.data.roles.includes(role.id));
+  const permissions = held.reduce((bits, role) => bits | BigInt(role.permissions), BigInt(0));
+  if ((permissions & BigInt(8 | (1 << 28))) === BigInt(0)) return "Give Komu permission to manage roles.";
+  const above = held.some((role) => role.id !== guildId && (role.position > target.position ||
+    (role.position === target.position && BigInt(role.id) < BigInt(target.id))));
+  return above ? null : "Move Komu’s role above the season reward role.";
+}
+
+export async function guildHasRole(guildId: string, roleId: string) {
+  const roles = await discordRequest<Array<{ id: string }>>("GET", `/guilds/${guildId}/roles`);
+  return roles.ok ? roles.data.some((role) => role.id === roleId) : null;
 }

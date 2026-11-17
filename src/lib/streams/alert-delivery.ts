@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { findOwnAlertMessage, sendChannelMessage } from "@/lib/discord/rest";
 import { classifyError, type ErrorCode } from "@/lib/monitoring/errors";
 import { observeOperation } from "@/lib/monitoring/health";
+import { matchSeasonStream } from "@/lib/seasons/lifecycle";
+import { appendSeasonButton, getSeasonAlertBinding, linkSeasonAlert } from "@/lib/seasons/posts";
 import { buildAlertMessage } from "./build-alert-message";
 import { decideAlertAction } from "./decide-alert";
 import type { StreamInfo } from "./types";
@@ -62,6 +64,7 @@ async function expireOpenStreams(
 
 export async function recordStreamObservation(
   accountId: string, stream: StreamInfo | null, observedAt: Date, endedKey?: string,
+  options?: { skipSeasonMatch?: boolean },
 ) {
   return observeOperation("database.stream-session", "postgres", () => prisma.$transaction(async (tx) => {
     const account = await lockStreamAccount(tx, accountId);
@@ -111,6 +114,12 @@ export async function recordStreamObservation(
       },
       select: { id: true },
     }));
+    if (!options?.skipSeasonMatch) {
+      await matchSeasonStream(tx, {
+        id: row.id, guildId: account.guildId, streamingAccountId: accountId,
+        startedAt: live.startedAt ?? observedAt, observedAt, providerStreamId: live.providerStreamId,
+      });
+    }
     return row.id;
   }));
 }
@@ -178,7 +187,10 @@ export async function sendLiveAlert(
       data: { ...current, status: "PENDING", claim, claimUntil: new Date(+now + CLAIM_MS),
         lastAttemptAt: now, retryAt: null, reason: null },
     });
-    return claimed.count ? { payload, channelId, roleId: current.roleId, retryCount: delivery.retryCount } : null;
+    if (!claimed.count) return null;
+    const binding = await getSeasonAlertBinding(tx, streamId, now);
+    return { payload: binding ? appendSeasonButton(payload, binding.id, binding.slot.season.name) : payload,
+      channelId, roleId: current.roleId, retryCount: delivery.retryCount, seasonBroadcastId: binding?.id };
   });
   if (!work) return "UNCHANGED";
   if ("outcome" in work) return work.outcome ?? "UNCHANGED";
@@ -213,6 +225,9 @@ export async function sendLiveAlert(
         await tx.stream.update({
           where: { id: streamId }, data: { alertSentAt: new Date(), alertMessageId: result.messageId },
         });
+        if (work.seasonBroadcastId) {
+          await linkSeasonAlert(tx, work.seasonBroadcastId, work.channelId, result.messageId!, new Date());
+        }
       }));
       return "ALERTED";
     }
