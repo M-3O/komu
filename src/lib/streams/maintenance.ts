@@ -6,6 +6,8 @@ import { checkTrackedYouTubeBroadcasts } from "@/lib/youtube/broadcast-tracking"
 import { markStaleAlertClaims, recordStreamObservation, sendLiveAlert } from "./alert-delivery";
 import { noteLiveCheckFailure, observeLiveStream, readYouTubeVideoStatus } from "./poller";
 import { processStreamWebhookEvents, reconcileStreamWebhookSubscriptions } from "./provider-webhooks";
+import { pollPinnedSeasonStreams } from "@/lib/seasons/pinned-streams";
+import { syncSeasonAlertPosts } from "@/lib/seasons/posts";
 
 const log = createLogger("stream");
 let running = false;
@@ -18,6 +20,7 @@ export async function runStreamMaintenance() {
     await markStaleAlertClaims();
     await processStreamWebhookEvents();
     await checkTrackedYouTubeBroadcasts();
+    await pollPinnedSeasonStreams();
     const due = await prisma.streamAlertDelivery.findMany({
       where: { status: "PENDING", claim: null, OR: [{ retryAt: null }, { retryAt: { lte: new Date() } }],
         stream: { endedAt: null } },
@@ -53,6 +56,7 @@ export async function runStreamMaintenance() {
         await noteLiveCheckFailure(stream.streamingAccountId, observedAt);
       }
     }
+    await syncSeasonAlertPosts();
     if (Date.now() >= nextSync) {
       nextSync = Date.now() + 15 * 60_000;
       await reconcileStreamWebhookSubscriptions();

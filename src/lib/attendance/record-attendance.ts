@@ -1,4 +1,4 @@
-import { XPSource } from "@prisma/client";
+import { XPSource, type Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
@@ -69,10 +69,30 @@ export async function recordStreamAttendance(
     return { recorded: false, reason: "NO_GUILD" };
   }
 
-  const member = await prisma.guildMember.upsert({
+  const member = await getAttendanceMember(prisma, stream.guildId, input);
+  const xp = await prisma.$transaction(
+    (tx) => commitStreamAttendance(tx, stream, member.id, "REACTION"),
+    { maxWait: 10_000, timeout: 15_000 },
+  );
+  if (!xp) return { recorded: false, reason: "ALREADY_RECORDED" };
+
+  log.info("Stream attendance recorded", {
+    streamId: stream.id,
+    memberId: member.id,
+    guildId: stream.guildId,
+  });
+  return { recorded: true, xp };
+}
+
+export function getAttendanceMember(
+  db: Prisma.TransactionClient,
+  guildId: string,
+  input: Pick<RecordAttendanceInput, "discordUserId" | "username" | "nickname">,
+) {
+  return db.guildMember.upsert({
     where: {
       guildId_discordId: {
-        guildId: stream.guildId,
+        guildId,
         discordId: input.discordUserId,
       },
     },
@@ -81,62 +101,37 @@ export async function recordStreamAttendance(
       nickname: input.nickname ?? undefined,
     },
     create: {
-      guildId: stream.guildId,
+      guildId,
       discordId: input.discordUserId,
       username: input.username,
       nickname: input.nickname ?? null,
     },
     select: { id: true },
   });
+}
 
-  // `skipDuplicates` is the deduplication mechanism rather than a try/catch.
-  // Catching Prisma's unique-violation error would work too, but it logs a
-  // prisma:error for every repeat reaction, and repeats are the normal case
-  // here rather than a failure.
-  const xp = await prisma.$transaction(async (tx) => {
-    // Match the lock order used by other XP writers.
-    await tx.$queryRaw`SELECT id FROM guild_members WHERE id = ${member.id} FOR UPDATE`;
-    const created = await tx.streamAttendance.createMany({
-      data: {
-        streamId: stream.id,
-        memberId: member.id,
-        method: "REACTION",
-      },
-      skipDuplicates: true,
-    });
-
-    if (created.count === 0) return null;
-
-    const attendance = await tx.streamAttendance.findUniqueOrThrow({
-      where: { streamId_memberId: { streamId: stream.id, memberId: member.id } },
-      select: { id: true },
-    });
-    await tx.guildMember.update({
-      where: { id: member.id },
-      data: { streamAttendanceCount: { increment: 1 } },
-    });
-
-    return awardAttendanceXp(tx, attendance.id, stream.guildId, member.id, stream.title);
-  }, { maxWait: 10_000, timeout: 15_000 });
-
-  if (!xp) {
-    return { recorded: false, reason: "ALREADY_RECORDED" };
-  }
-
-  log.info("Stream attendance recorded", {
-    streamId: stream.id,
-    memberId: member.id,
-    guildId: stream.guildId,
+export async function commitStreamAttendance(
+  tx: Prisma.TransactionClient,
+  stream: { id: string; guildId: string; title: string },
+  memberId: string,
+  method: "REACTION" | "SEASON_CHECK_IN",
+) {
+  await tx.$queryRaw`SELECT id FROM guild_members WHERE id = ${memberId} FOR UPDATE`;
+  const [attendance] = await tx.streamAttendance.createManyAndReturn({
+    data: { streamId: stream.id, memberId, method },
+    skipDuplicates: true,
+    select: { id: true },
   });
-
-  // Attendance is worth XP on its own, separate from messages. The daily
-  // cap does not apply: the plan treats this as its own source, and a cap
-  // sized for messages would silently swallow attendance.
-  return { recorded: true, xp };
+  if (!attendance) return null;
+  await tx.guildMember.update({
+    where: { id: memberId },
+    data: { streamAttendanceCount: { increment: 1 } },
+  });
+  return awardAttendanceXp(tx, attendance.id, stream.guildId, memberId, stream.title);
 }
 
 export async function awardAttendanceXp(
-  tx: import("@prisma/client").Prisma.TransactionClient,
+  tx: Prisma.TransactionClient,
   attendanceId: string,
   guildId: string,
   memberId: string,

@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { DashboardNav } from "@/components/dashboard/DashboardNav";
 import { resolveDashboardGuild } from "@/lib/dashboard/require-guild";
+import { seasonsEnabled } from "@/lib/seasons/lifecycle";
 
 /**
  * Dashboard shell: sidebar, command bar and the active page.
@@ -22,7 +23,7 @@ export default function DashboardLayout({
 }: LayoutProps<"/dashboard">) {
   return (
     <div className="flex min-h-screen">
-      <DashboardNav />
+      <DashboardNav showSeasons={seasonsEnabled()} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center border-b border-[color:var(--color-komu-border)] bg-[color:var(--color-komu-bg)]/80 px-4 pl-16 backdrop-blur-xl md:px-6">

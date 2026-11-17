@@ -37,6 +37,7 @@ export const DASHBOARD_NAV: NavSection[] = [
     items: [
       { href: "/dashboard/rewards", label: "Rewards" },
       { href: "/dashboard/challenges", label: "Challenges" },
+      { href: "/dashboard/seasons", label: "Seasons" },
       { href: "/dashboard/achievements", label: "Achievements" },
     ],
   },
